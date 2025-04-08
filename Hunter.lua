@@ -489,104 +489,90 @@ local AutoFarmToggle = PlayTab:CreateToggle({
     CurrentValue = ConfigSystem.CurrentConfig.AutoFarm or false,
     Flag = "AutoFarm",
     Callback = function(Value)
-        -- Save to config
-        ConfigSystem.CurrentConfig.AutoFarm = Value
-        ConfigSystem.SaveConfig()
+        -- Get the character and humanoid root part
+        local character = player.Character or player.CharacterAdded:Wait()
+        local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
         
         if Value then
             -- Start auto farm
             if farmConnection then farmConnection:Disconnect() end
             
-            -- Continuous farming loop that runs independently
-            farmConnection = true -- Just a marker that we're running
-            
-            task.spawn(function()
-                while AutoFarmToggle.CurrentValue do
-                    -- Get the character and humanoid root part
-                    local character = player.Character or player.CharacterAdded:Wait()
-                    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-                    
-                    if humanoidRootPart then
-                        -- Find mobs
-                        local mobsFolder = workspace:FindFirstChild("Mobs")
-                        if not mobsFolder then
-                            -- Just notify once, then continue looping
-                            if mobsFolder ~= false then -- Use this as a flag
-                                Rayfield:Notify({
-                                    Title = "Warning",
-                                    Content = "Mobs folder not found! Continuing to search...",
-                                    Duration = 3,
-                                    Image = "alert-triangle",
-                                })
-                                mobsFolder = false -- Mark that we've notified
-                            end
-                            -- Keep looping even when not found
-                            task.wait(1)
-                            continue
-                        end
-                        
-                        mobsFolder = true -- Reset our notification flag
-                        local targetMob = nil
-                        
-                        -- Choose target based on selection
-                        if selectedMob == "All Mobs" then
-                            -- Find the closest mob
-                            local closestDistance = math.huge
-                            for _, mob in pairs(workspace.Mobs:GetChildren()) do
-                                if mob:FindFirstChild("HumanoidRootPart") then
-                                    local distance = (mob.HumanoidRootPart.Position - humanoidRootPart.Position).Magnitude
-                                    if distance < closestDistance then
-                                        closestDistance = distance
-                                        targetMob = mob
-                                    end
-                                end
-                            end
-                        else
-                            -- Find the selected mob type
-                            if workspace.Mobs:FindFirstChild(selectedMob) and workspace.Mobs[selectedMob]:FindFirstChild("HumanoidRootPart") then
-                                targetMob = workspace.Mobs[selectedMob]
-                            end
-                        end
-                        
-                        -- Teleport to mob if found
-                        if targetMob and targetMob:FindFirstChild("HumanoidRootPart") then
-                            local teleportDistance = ConfigSystem.CurrentConfig.TeleportDistance or 5
-                            local mobPosition = targetMob.HumanoidRootPart.Position
-                            local direction = (humanoidRootPart.Position - mobPosition).Unit
-                            local targetPosition = mobPosition + (direction * teleportDistance)
-                            
-                            -- Teleport to the mob with offset
-                            humanoidRootPart.CFrame = CFrame.new(targetPosition, mobPosition)
-                            
-                            -- Auto attack if enabled
-                            game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Combat"):FireServer()
-                        end
-                    end
-                    
-                    -- Always wait a bit between iterations to prevent script overload
-                    task.wait(0.5)
+            farmConnection = game:GetService("RunService").Heartbeat:Connect(function()
+                -- Find mobs
+                local mobsFolder = workspace:FindFirstChild("Mobs")
+                if not mobsFolder then
+                    Rayfield:Notify({
+                        Title = "Error",
+                        Content = "Mobs folder not found!",
+                        Duration = 3,
+                        Image = "alert-triangle", -- Lucide icon
+                    })
+                    AutoFarmToggle:Set(false)
+                    return
                 end
                 
-                farmConnection = nil
+                local targetMob = nil
+                
+                -- Choose target based on selection
+                if selectedMob == "All Mobs" then
+                    -- Find the closest mob
+                    local closestDistance = math.huge
+                    for _, mob in pairs(mobsFolder:GetChildren()) do
+                        if mob:FindFirstChild("HumanoidRootPart") then
+                            local distance = (mob.HumanoidRootPart.Position - humanoidRootPart.Position).Magnitude
+                            if distance < closestDistance then
+                                closestDistance = distance
+                                targetMob = mob
+                            end
+                        end
+                    end
+                else
+                    -- Find the selected mob type
+                    if mobsFolder:FindFirstChild(selectedMob) and mobsFolder[selectedMob]:FindFirstChild("HumanoidRootPart") then
+                        targetMob = mobsFolder[selectedMob]
+                    end
+                end
+                
+                -- Teleport to mob if found
+                if targetMob and targetMob:FindFirstChild("HumanoidRootPart") then
+                    local teleportDistance = ConfigSystem.CurrentConfig.TeleportDistance or 5
+                    local mobPosition = targetMob.HumanoidRootPart.Position
+                    local direction = (humanoidRootPart.Position - mobPosition).Unit
+                    local targetPosition = mobPosition + (direction * teleportDistance)
+                    
+                    -- Teleport to the mob with offset
+                    humanoidRootPart.CFrame = CFrame.new(targetPosition, mobPosition)
+                    
+                    -- Auto attack if enabled
+                    game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Combat"):FireServer()
+                    wait(0.5) -- Small delay to prevent overwhelming the server
+                end
             end)
             
             Rayfield:Notify({
                 Title = "Auto Farm Enabled",
-                Content = "Now continuously farming" .. (selectedMob ~= "All Mobs" and (": " .. selectedMob) or ""),
+                Content = "Now farming: " .. selectedMob,
                 Duration = 3,
                 Image = "target", -- Lucide icon
             })
         else
             -- Stop auto farm
-            farmConnection = nil
-            
-            Rayfield:Notify({
-                Title = "Auto Farm Disabled",
-                Content = "Auto farming has been stopped",
-                Duration = 3,
-                Image = "square", -- Lucide icon
-            })
+            if farmConnection then 
+                farmConnection:Disconnect()
+                farmConnection = nil
+                
+                Rayfield:Notify({
+                    Title = "Auto Farm Disabled",
+                    Content = "Auto farming has been stopped",
+                    Duration = 3,
+                    Image = "square", -- Lucide icon
+                })
+            end
         end
+        
+        -- Save to config
+        ConfigSystem.CurrentConfig.AutoFarm = Value
+        ConfigSystem.SaveConfig()
     end,
 })
 
