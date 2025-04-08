@@ -1,9 +1,10 @@
 -- Hunter.lua
--- Simple UI using Rayfield Library for Hunters Game
+-- Modern UI using Orion Library for Hunters Game
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 
 -- Player reference
 local player = Players.LocalPlayer
@@ -11,10 +12,12 @@ local playerName = player.Name
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
 
--- Config System (inspired by Arise.lua)
-local ConfigSystem = {}
-ConfigSystem.FileName = "HunterConfig_" .. playerName .. ".json"
-ConfigSystem.DefaultConfig = {
+-- Config System integration with AutoSave
+local AutoSaveSystem = loadstring(readfile("AutoSave.lua"))()
+
+-- Set up configuration specific to Hunter
+AutoSaveSystem.FolderPath = "KaihonScriptHub/Hunter"
+AutoSaveSystem.DefaultConfig = {
     AutoRoll = false,
     RollDelay = 1,
     AutoAttack = false,
@@ -24,90 +27,83 @@ ConfigSystem.DefaultConfig = {
     TeleportDistance = 5,
     SelectedMob = "All Mobs"
 }
-ConfigSystem.CurrentConfig = {}
 
--- Function to save config
-ConfigSystem.SaveConfig = function()
-    local success, err = pcall(function()
-        writefile(ConfigSystem.FileName, HttpService:JSONEncode(ConfigSystem.CurrentConfig))
-    end)
-    if success then
-        print("Config saved successfully!")
-    else
-        warn("Failed to save config:", err)
-    end
-end
+-- Initialize AutoSave
+AutoSaveSystem.Init()
 
--- Function to load config
-ConfigSystem.LoadConfig = function()
-    local success, content = pcall(function()
-        if isfile(ConfigSystem.FileName) then
-            return readfile(ConfigSystem.FileName)
-        end
-        return nil
-    end)
-    
-    if success and content then
-        local data = HttpService:JSONDecode(content)
-        ConfigSystem.CurrentConfig = data
-        return true
-    else
-        ConfigSystem.CurrentConfig = table.clone(ConfigSystem.DefaultConfig)
-        ConfigSystem.SaveConfig()
-        return false
-    end
-end
+-- Initialize Orion
+local OrionLib = loadstring(game:HttpGet(('https://raw.githubusercontent.com/shlexware/Orion/main/source')))()
 
--- Load config on startup
-ConfigSystem.LoadConfig()
-
--- Initialize Rayfield
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
-
--- Create Window (Without saving functionality)
-local Window = Rayfield:CreateWindow({
-    Name = "KaihonHub",
-    LoadingTitle = "KaihonHub",
-    LoadingSubtitle = "by DuongTuan",
-    ConfigurationSaving = {
-        Enabled = false -- Disable Rayfield's built-in saving
-    },
-    KeySystem = false
+-- Create Window
+local Window = OrionLib:MakeWindow({
+    Name = "KaihonHub | Hunter", 
+    HidePremium = true,
+    SaveConfig = false, -- Use our custom save system
+    ConfigFolder = "",
+    IntroEnabled = true,
+    IntroText = "KaihonHub",
+    IntroIcon = "rbxassetid://4483345998",
+    Icon = "rbxassetid://4483345998"
 })
 
 -- Create Main Tab
-local MainTab = Window:CreateTab("Main", 4483362458) -- Home icon
+local MainTab = Window:MakeTab({
+    Name = "Main",
+    Icon = "rbxassetid://4483362458",
+    PremiumOnly = false
+})
 
 -- Create Map Tab
-local MapTab = Window:CreateTab("Map", 9288394834) -- Map icon
+local MapTab = Window:MakeTab({
+    Name = "Map",
+    Icon = "rbxassetid://9288394834",
+    PremiumOnly = false
+})
 
 -- Create Play Tab
-local PlayTab = Window:CreateTab("Play", 4483362927) -- Play icon
+local PlayTab = Window:MakeTab({
+    Name = "Play",
+    Icon = "rbxassetid://4483362927",
+    PremiumOnly = false
+})
 
--- Main Section
-local MainSection = MainTab:CreateSection("Roll Settings")
+-- Create Config Tab
+local ConfigTab = Window:MakeTab({
+    Name = "Config",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+-- Main Tab Content
+local MainSection = MainTab:AddSection({
+    Name = "Roll Settings"
+})
+
+-- Roll counters and connections
+local rollConnection = nil
+local rollCount = 0
 
 -- Auto Roll Toggle
-local rollConnection = nil
-local AutoRollToggle = MainTab:CreateToggle({
+MainTab:AddToggle({
     Name = "Auto Roll",
-    CurrentValue = ConfigSystem.CurrentConfig.AutoRoll or false,
+    Default = AutoSaveSystem.GetData("AutoRoll") or false,
     Flag = "AutoRoll",
+    Save = false,
     Callback = function(Value)
         if Value then
             -- Start auto roll
             if rollConnection then rollConnection:Disconnect() end
             
-            rollConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            rollConnection = RunService.Heartbeat:Connect(function()
                 game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Roll"):InvokeServer()
-                wait(ConfigSystem.CurrentConfig.RollDelay or 1) -- Use saved delay
+                task.wait(AutoSaveSystem.GetData("RollDelay") or 1) -- Use saved delay
             end)
             
-            Rayfield:Notify({
-                Title = "Auto Roll Enabled",
+            OrionLib:MakeNotification({
+                Name = "Auto Roll Enabled",
                 Content = "Now automatically rolling...",
-                Duration = 3,
-                Image = "dice", -- Lucide icon
+                Image = "rbxassetid://4483345998",
+                Time = 3
             })
         else
             -- Stop auto roll
@@ -115,83 +111,92 @@ local AutoRollToggle = MainTab:CreateToggle({
                 rollConnection:Disconnect()
                 rollConnection = nil
                 
-                Rayfield:Notify({
-                    Title = "Auto Roll Disabled",
+                OrionLib:MakeNotification({
+                    Name = "Auto Roll Disabled",
                     Content = "Auto roll has been stopped",
-                    Duration = 3,
-                    Image = "square", -- Lucide icon
+                    Image = "rbxassetid://4483345998",
+                    Time = 3
                 })
             end
         end
         
         -- Save to config
-        ConfigSystem.CurrentConfig.AutoRoll = Value
-        ConfigSystem.SaveConfig()
-    end,
+        AutoSaveSystem.UpdateData("AutoRoll", Value)
+    end
 })
 
 -- Roll Delay Slider
-local RollDelaySlider = MainTab:CreateSlider({
+MainTab:AddSlider({
     Name = "Roll Delay (seconds)",
-    Range = {0.1, 5},
+    Min = 0.1,
+    Max = 5,
+    Default = AutoSaveSystem.GetData("RollDelay") or 1,
+    Color = Color3.fromRGB(255, 185, 0),
     Increment = 0.1,
-    Suffix = "s",
-    CurrentValue = ConfigSystem.CurrentConfig.RollDelay or 1,
+    ValueName = "seconds",
     Flag = "RollDelay",
+    Save = false,
     Callback = function(Value)
-        -- The delay will be applied on the next toggle enable
-        Rayfield:Notify({
-            Title = "Roll Delay Updated",
+        OrionLib:MakeNotification({
+            Name = "Roll Delay Updated",
             Content = "New delay: " .. Value .. " seconds",
-            Duration = 2,
-            Image = "timer", -- Lucide icon
+            Image = "rbxassetid://4483345998",
+            Time = 2
         })
         
         -- Save to config
-        ConfigSystem.CurrentConfig.RollDelay = Value
-        ConfigSystem.SaveConfig()
-    end,
+        AutoSaveSystem.UpdateData("RollDelay", Value)
+    end
 })
 
 -- Manual Roll Button
-local RollButton = MainTab:CreateButton({
+MainTab:AddButton({
     Name = "Manual Roll",
     Callback = function()
         game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Roll"):InvokeServer()
         
-        Rayfield:Notify({
-            Title = "Manual Roll",
+        -- Update roll count
+        rollCount = rollCount + 1
+        
+        OrionLib:MakeNotification({
+            Name = "Manual Roll",
             Content = "Roll executed!",
-            Duration = 2,
-            Image = "dice", -- Lucide icon
+            Image = "rbxassetid://4483345998",
+            Time = 2
         })
-    end,
+    end
 })
 
 -- Attack Section
-local AttackSection = MainTab:CreateSection("Attack Settings")
+local AttackSection = MainTab:AddSection({
+    Name = "Attack Settings"
+})
+
+-- Attack counters and connections
+local attackConnection = nil
+local attackCount = 0
 
 -- Auto Attack Toggle
-local attackConnection = nil
-local AutoAttackToggle = MainTab:CreateToggle({
+MainTab:AddToggle({
     Name = "Auto Attack",
-    CurrentValue = ConfigSystem.CurrentConfig.AutoAttack or false,
+    Default = AutoSaveSystem.GetData("AutoAttack") or false,
     Flag = "AutoAttack",
+    Save = false,
     Callback = function(Value)
         if Value then
             -- Start auto attack
             if attackConnection then attackConnection:Disconnect() end
             
-            attackConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            attackConnection = RunService.Heartbeat:Connect(function()
                 game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Combat"):FireServer()
-                wait(ConfigSystem.CurrentConfig.AttackDelay or 1) -- Use saved delay
+                task.wait(AutoSaveSystem.GetData("AttackDelay") or 1) -- Use saved delay
             end)
             
-            Rayfield:Notify({
-                Title = "Auto Attack Enabled",
+            OrionLib:MakeNotification({
+                Name = "Auto Attack Enabled",
                 Content = "Now automatically attacking...",
-                Duration = 3,
-                Image = "swords", -- Lucide icon
+                Image = "rbxassetid://4483345998",
+                Time = 3
             })
         else
             -- Stop auto attack
@@ -199,104 +204,94 @@ local AutoAttackToggle = MainTab:CreateToggle({
                 attackConnection:Disconnect()
                 attackConnection = nil
                 
-                Rayfield:Notify({
-                    Title = "Auto Attack Disabled",
+                OrionLib:MakeNotification({
+                    Name = "Auto Attack Disabled",
                     Content = "Auto attack has been stopped",
-                    Duration = 3,
-                    Image = "square", -- Lucide icon
+                    Image = "rbxassetid://4483345998",
+                    Time = 3
                 })
             end
         end
         
         -- Save to config
-        ConfigSystem.CurrentConfig.AutoAttack = Value
-        ConfigSystem.SaveConfig()
-    end,
+        AutoSaveSystem.UpdateData("AutoAttack", Value)
+    end
 })
 
 -- Attack Delay Slider
-local AttackDelaySlider = MainTab:CreateSlider({
+MainTab:AddSlider({
     Name = "Attack Delay (seconds)",
-    Range = {0.1, 5},
+    Min = 0.1,
+    Max = 5,
+    Default = AutoSaveSystem.GetData("AttackDelay") or 1,
+    Color = Color3.fromRGB(255, 0, 0),
     Increment = 0.1,
-    Suffix = "s",
-    CurrentValue = ConfigSystem.CurrentConfig.AttackDelay or 1,
+    ValueName = "seconds",
     Flag = "AttackDelay",
+    Save = false,
     Callback = function(Value)
-        -- The delay will be applied on the next toggle enable
-        Rayfield:Notify({
-            Title = "Attack Delay Updated",
+        OrionLib:MakeNotification({
+            Name = "Attack Delay Updated",
             Content = "New delay: " .. Value .. " seconds",
-            Duration = 2,
-            Image = "timer", -- Lucide icon
+            Image = "rbxassetid://4483345998",
+            Time = 2
         })
         
         -- Save to config
-        ConfigSystem.CurrentConfig.AttackDelay = Value
-        ConfigSystem.SaveConfig()
-    end,
+        AutoSaveSystem.UpdateData("AttackDelay", Value)
+    end
 })
 
 -- Manual Attack Button
-local AttackButton = MainTab:CreateButton({
+MainTab:AddButton({
     Name = "Manual Attack",
     Callback = function()
         game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Combat"):FireServer()
         
-        Rayfield:Notify({
-            Title = "Manual Attack",
+        -- Update attack count
+        attackCount = attackCount + 1
+        
+        OrionLib:MakeNotification({
+            Name = "Manual Attack",
             Content = "Attack executed!",
-            Duration = 2,
-            Image = "swords", -- Lucide icon
+            Image = "rbxassetid://4483345998",
+            Time = 2
         })
-    end,
+    end
 })
 
 -- Status Section
-local StatusSection = MainTab:CreateSection("Status")
+local StatusSection = MainTab:AddSection({
+    Name = "Status"
+})
 
--- Create Stats Label
-local statusLabel = MainTab:CreateLabel("Player: " .. playerName)
-local rollsLabel = MainTab:CreateLabel("Rolls: 0")
-local attacksLabel = MainTab:CreateLabel("Attacks: 0")
+-- Create Stats
+MainTab:AddParagraph("Player Statistics", "Player: " .. playerName .. 
+                     "\nRolls: " .. rollCount .. 
+                     "\nAttacks: " .. attackCount)
 
--- Roll counter
-local rollCount = 0
-
--- Function to update roll count
-local function updateRollCount()
-    rollCount = rollCount + 1
-    rollsLabel:Set("Rolls: " .. rollCount)
+-- Function to update status paragraph
+local function updateStatsParagraph()
+    MainTab:AddParagraph("Player Statistics", "Player: " .. playerName .. 
+                         "\nRolls: " .. rollCount .. 
+                         "\nAttacks: " .. attackCount)
 end
 
--- Attack counter
-local attackCount = 0
-
--- Function to update attack count
-local function updateAttackCount()
-    attackCount = attackCount + 1
-    attacksLabel:Set("Attacks: " .. attackCount)
-end
-
--- Hook the update roll count to both manual and auto roll
-local oldRollCallback = RollButton.Callback
-RollButton.Callback = function()
-    oldRollCallback()
-    updateRollCount()
-end
-
--- Hook the update attack count to manual attack
-local oldAttackCallback = AttackButton.Callback
-AttackButton.Callback = function()
-    oldAttackCallback()
-    updateAttackCount()
-end
+-- Update stats every second
+task.spawn(function()
+    while true do
+        updateStatsParagraph()
+        task.wait(1)
+    end
+end)
 
 -- Map Tab Content
-local MapSelectionSection = MapTab:CreateSection("Map Selection")
+local MapSelectionSection = MapTab:AddSection({
+    Name = "Map Selection"
+})
 
 -- Map selection variable
-local selectedMap = ConfigSystem.CurrentConfig.SelectedMap or nil
+local selectedMap = AutoSaveSystem.GetData("SelectedMap") or ""
 local mapCodes = {
     ["SINGULARITY"] = "DoubleDungeonD",
     ["GOBLIN CAVES"] = "GoblinCave",
@@ -304,95 +299,47 @@ local mapCodes = {
 }
 
 -- Map Dropdown
-local MapDropdown = MapTab:CreateDropdown({
-    Name = "Chọn Map",
+MapTab:AddDropdown({
+    Name = "Select Map",
+    Default = selectedMap ~= "" and selectedMap or nil,
     Options = {"SINGULARITY", "GOBLIN CAVES", "SPIDER CAVERN"},
-    CurrentOption = selectedMap and {selectedMap} or {}, -- Use saved map
-    MultipleOptions = false,
     Flag = "SelectedMap",
+    Save = false,
     Callback = function(Option)
-        selectedMap = Option[1]
-        Rayfield:Notify({
-            Title = "Map Selected",
+        selectedMap = Option
+        OrionLib:MakeNotification({
+            Name = "Map Selected",
             Content = "You selected: " .. selectedMap,
-            Duration = 2,
-            Image = "map", -- Lucide icon
+            Image = "rbxassetid://4483345998",
+            Time = 2
         })
         
         -- Save to config
-        ConfigSystem.CurrentConfig.SelectedMap = selectedMap
-        ConfigSystem.SaveConfig()
-    end,
+        AutoSaveSystem.UpdateData("SelectedMap", selectedMap)
+        
+        -- Update current map paragraph
+        MapTab:AddParagraph("Current Map", "Selected Map: " .. Option)
+    end
 })
 
--- Current Map Label
-local CurrentMapLabel = MapTab:CreateLabel("Selected Map: " .. (selectedMap or "None"))
-
--- Update map label when selection changes
-local oldMapCallback = MapDropdown.Callback
-MapDropdown.Callback = function(Option)
-    oldMapCallback(Option)
-    CurrentMapLabel:Set("Selected Map: " .. Option[1])
-end
+-- Current Map display
+MapTab:AddParagraph("Current Map", "Selected Map: " .. (selectedMap ~= "" and selectedMap or "None"))
 
 -- Map Control Section
-local MapControlSection = MapTab:CreateSection("Map Controls")
-
--- Start button (toggle)
-local startConnection = nil
-local StartToggle = MapTab:CreateToggle({
-    Name = "Start Map",
-    CurrentValue = false,
-    Flag = "StartMap",
-    Callback = function(Value)
-        if Value then
-            if selectedMap == nil then
-                Rayfield:Notify({
-                    Title = "Error",
-                    Content = "Please select a map first!",
-                    Duration = 3,
-                    Image = "alert-triangle", -- Lucide icon
-                })
-                StartToggle:Set(false)
-                return
-            end
-            
-            -- Create the lobby with selected map
-            local mapCode = mapCodes[selectedMap]
-            local args = {
-                [1] = mapCode
-            }
-            
-            -- Create lobby
-            game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("createLobby"):InvokeServer(unpack(args))
-            
-            -- Start the lobby
-            game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("LobbyStart"):FireServer()
-            
-            Rayfield:Notify({
-                Title = "Map Started",
-                Content = "Starting " .. selectedMap .. "...",
-                Duration = 3,
-                Image = "play", -- Lucide icon
-            })
-            
-            -- Auto reset the toggle after starting
-            wait(1)
-            StartToggle:Set(false)
-        end
-    end,
+local MapControlSection = MapTab:AddSection({
+    Name = "Map Controls"
 })
 
--- Manual Create Lobby Button
-local CreateLobbyButton = MapTab:CreateButton({
-    Name = "Create Lobby Only",
+-- Start Map Button
+MapTab:AddButton({
+    Name = "Start Map",
     Callback = function()
-        if selectedMap == nil then
-            Rayfield:Notify({
-                Title = "Error",
+        if selectedMap == "" then
+            OrionLib:MakeNotification({
+                Name = "Error",
                 Content = "Please select a map first!",
-                Duration = 3,
-                Image = "alert-triangle", -- Lucide icon
+                Image = "rbxassetid://4483345998",
+                Time = 3
             })
             return
         end
@@ -406,108 +353,155 @@ local CreateLobbyButton = MapTab:CreateButton({
         -- Create lobby
         game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("createLobby"):InvokeServer(unpack(args))
         
-        Rayfield:Notify({
-            Title = "Lobby Created",
-            Content = "Created lobby for " .. selectedMap,
-            Duration = 3,
-            Image = "users", -- Lucide icon
+        -- Start the lobby
+        game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("LobbyStart"):FireServer()
+        
+        OrionLib:MakeNotification({
+            Name = "Map Started",
+            Content = "Starting " .. selectedMap .. "...",
+            Image = "rbxassetid://4483345998",
+            Time = 3
         })
-    end,
+    end
 })
 
--- Manual Start Button
-local StartLobbyButton = MapTab:CreateButton({
+-- Create Lobby Button
+MapTab:AddButton({
+    Name = "Create Lobby Only",
+    Callback = function()
+        if selectedMap == "" then
+            OrionLib:MakeNotification({
+                Name = "Error",
+                Content = "Please select a map first!",
+                Image = "rbxassetid://4483345998",
+                Time = 3
+            })
+            return
+        end
+        
+        -- Create the lobby with selected map
+        local mapCode = mapCodes[selectedMap]
+        local args = {
+            [1] = mapCode
+        }
+        
+        -- Create lobby
+        game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("createLobby"):InvokeServer(unpack(args))
+        
+        OrionLib:MakeNotification({
+            Name = "Lobby Created",
+            Content = "Created lobby for " .. selectedMap,
+            Image = "rbxassetid://4483345998",
+            Time = 3
+        })
+    end
+})
+
+-- Start Lobby Button
+MapTab:AddButton({
     Name = "Start Lobby Only",
     Callback = function()
         -- Start the lobby
         game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("LobbyStart"):FireServer()
         
-        Rayfield:Notify({
-            Title = "Lobby Started",
+        OrionLib:MakeNotification({
+            Name = "Lobby Started",
             Content = "Starting lobby...",
-            Duration = 3,
-            Image = "play", -- Lucide icon
+            Image = "rbxassetid://4483345998",
+            Time = 3
         })
-    end,
+    end
 })
 
 -- Play Tab Content
-local FarmSection = PlayTab:CreateSection("Auto Farm")
+local FarmSection = PlayTab:AddSection({
+    Name = "Auto Farm"
+})
 
 -- Available mobs
 local mobList = {"All Mobs", "Golem Mage"}
-local selectedMob = ConfigSystem.CurrentConfig.SelectedMob or "All Mobs"
+local selectedMob = AutoSaveSystem.GetData("SelectedMob") or "All Mobs"
 
 -- Mob selection dropdown
-local MobDropdown = PlayTab:CreateDropdown({
+PlayTab:AddDropdown({
     Name = "Select Target",
+    Default = selectedMob,
     Options = mobList,
-    CurrentOption = {selectedMob}, -- Use saved mob
-    MultipleOptions = false,
     Flag = "SelectedMob",
+    Save = false,
     Callback = function(Option)
-        selectedMob = Option[1]
-        Rayfield:Notify({
-            Title = "Target Selected",
+        selectedMob = Option
+        OrionLib:MakeNotification({
+            Name = "Target Selected",
             Content = "Now targeting: " .. selectedMob,
-            Duration = 2,
-            Image = "target", -- Lucide icon
+            Image = "rbxassetid://4483345998",
+            Time = 2
         })
         
         -- Save to config
-        ConfigSystem.CurrentConfig.SelectedMob = selectedMob
-        ConfigSystem.SaveConfig()
-    end,
+        AutoSaveSystem.UpdateData("SelectedMob", selectedMob)
+    end
 })
 
 -- Teleport distance slider
-local TeleportDistanceSlider = PlayTab:CreateSlider({
+PlayTab:AddSlider({
     Name = "Teleport Distance",
-    Range = {0, 10},
+    Min = 0,
+    Max = 10,
+    Default = AutoSaveSystem.GetData("TeleportDistance") or 5,
+    Color = Color3.fromRGB(0, 170, 255),
     Increment = 0.5,
-    Suffix = "studs",
-    CurrentValue = ConfigSystem.CurrentConfig.TeleportDistance or 5,
+    ValueName = "studs",
     Flag = "TeleportDistance",
+    Save = false,
     Callback = function(Value)
-        Rayfield:Notify({
-            Title = "Distance Updated",
+        OrionLib:MakeNotification({
+            Name = "Distance Updated",
             Content = "New teleport distance: " .. Value .. " studs",
-            Duration = 2,
-            Image = "ruler", -- Lucide icon
+            Image = "rbxassetid://4483345998",
+            Time = 2
         })
         
         -- Save to config
-        ConfigSystem.CurrentConfig.TeleportDistance = Value
-        ConfigSystem.SaveConfig()
-    end,
+        AutoSaveSystem.UpdateData("TeleportDistance", Value)
+    end
 })
 
--- Farm toggle
+-- Farm variables
 local farmConnection = nil
-local AutoFarmToggle = PlayTab:CreateToggle({
+local mobsKilled = 0
+local farmStartTime = 0
+local farmTimeUpdateConnection = nil
+
+-- Farm toggle
+PlayTab:AddToggle({
     Name = "Auto Farm",
-    CurrentValue = ConfigSystem.CurrentConfig.AutoFarm or false,
+    Default = AutoSaveSystem.GetData("AutoFarm") or false,
     Flag = "AutoFarm",
+    Save = false,
     Callback = function(Value)
         -- Get the character and humanoid root part
         local character = player.Character or player.CharacterAdded:Wait()
         local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
         
         if Value then
+            -- Start farm timer
+            farmStartTime = os.time()
+            
             -- Start auto farm
             if farmConnection then farmConnection:Disconnect() end
             
-            farmConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            farmConnection = RunService.Heartbeat:Connect(function()
                 -- Find mobs
                 local mobsFolder = workspace:FindFirstChild("Mobs")
                 if not mobsFolder then
-                    Rayfield:Notify({
-                        Title = "Error",
+                    OrionLib:MakeNotification({
+                        Name = "Error",
                         Content = "Mobs folder not found!",
-                        Duration = 3,
-                        Image = "alert-triangle", -- Lucide icon
+                        Image = "rbxassetid://4483345998",
+                        Time = 3
                     })
-                    AutoFarmToggle:Set(false)
+                    PlayTab:UpdateToggle("AutoFarm", false)
                     return
                 end
                 
@@ -535,7 +529,7 @@ local AutoFarmToggle = PlayTab:CreateToggle({
                 
                 -- Teleport to mob if found
                 if targetMob and targetMob:FindFirstChild("HumanoidRootPart") then
-                    local teleportDistance = ConfigSystem.CurrentConfig.TeleportDistance or 5
+                    local teleportDistance = AutoSaveSystem.GetData("TeleportDistance") or 5
                     local mobPosition = targetMob.HumanoidRootPart.Position
                     local direction = (humanoidRootPart.Position - mobPosition).Unit
                     local targetPosition = mobPosition + (direction * teleportDistance)
@@ -545,105 +539,79 @@ local AutoFarmToggle = PlayTab:CreateToggle({
                     
                     -- Auto attack if enabled
                     game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Combat"):FireServer()
-                    wait(0.5) -- Small delay to prevent overwhelming the server
+                    task.wait(0.5) -- Small delay to prevent overwhelming the server
                 end
             end)
             
-            Rayfield:Notify({
-                Title = "Auto Farm Enabled",
+            -- Start farm time update
+            if farmTimeUpdateConnection then
+                farmTimeUpdateConnection:Disconnect()
+            end
+            
+            farmTimeUpdateConnection = RunService.Heartbeat:Connect(function()
+                local elapsedTime = os.time() - farmStartTime
+                local minutes = math.floor(elapsedTime / 60)
+                local seconds = elapsedTime % 60
+                PlayTab:UpdateParagraph("Farm Statistics", "Mobs Killed: " .. mobsKilled .. 
+                                     "\nFarm Time: " .. minutes .. "m " .. seconds .. "s")
+                task.wait(1) -- Update every second
+            end)
+            
+            OrionLib:MakeNotification({
+                Name = "Auto Farm Enabled",
                 Content = "Now farming: " .. selectedMob,
-                Duration = 3,
-                Image = "target", -- Lucide icon
+                Image = "rbxassetid://4483345998",
+                Time = 3
             })
         else
             -- Stop auto farm
             if farmConnection then 
                 farmConnection:Disconnect()
                 farmConnection = nil
-                
-                Rayfield:Notify({
-                    Title = "Auto Farm Disabled",
-                    Content = "Auto farming has been stopped",
-                    Duration = 3,
-                    Image = "square", -- Lucide icon
-                })
             end
+            
+            -- Stop farm timer
+            if farmTimeUpdateConnection then
+                farmTimeUpdateConnection:Disconnect()
+                farmTimeUpdateConnection = nil
+            end
+            
+            OrionLib:MakeNotification({
+                Name = "Auto Farm Disabled",
+                Content = "Auto farming has been stopped",
+                Image = "rbxassetid://4483345998",
+                Time = 3
+            })
         end
         
         -- Save to config
-        ConfigSystem.CurrentConfig.AutoFarm = Value
-        ConfigSystem.SaveConfig()
-    end,
+        AutoSaveSystem.UpdateData("AutoFarm", Value)
+    end
 })
 
 -- Stats section for farming
-local FarmStatsSection = PlayTab:CreateSection("Farm Stats")
-local mobsKilledLabel = PlayTab:CreateLabel("Mobs Killed: 0")
-local farmTimeLabel = PlayTab:CreateLabel("Farm Time: 0m 0s")
+local FarmStatsSection = PlayTab:AddSection({
+    Name = "Farm Stats"
+})
 
--- Farm stats counters
-local mobsKilled = 0
-local farmStartTime = 0
-local farmTimeUpdateConnection = nil
-
--- Update farm time
-local function updateFarmTime()
-    if farmStartTime > 0 then
-        local elapsedTime = os.time() - farmStartTime
-        local minutes = math.floor(elapsedTime / 60)
-        local seconds = elapsedTime % 60
-        farmTimeLabel:Set("Farm Time: " .. minutes .. "m " .. seconds .. "s")
-    end
-end
-
--- Update farm stats when toggling
-local oldFarmCallback = AutoFarmToggle.Callback
-AutoFarmToggle.Callback = function(Value)
-    oldFarmCallback(Value)
-    
-    if Value then
-        -- Reset and start farm timer
-        farmStartTime = os.time()
-        
-        if farmTimeUpdateConnection then
-            farmTimeUpdateConnection:Disconnect()
-        end
-        
-        farmTimeUpdateConnection = game:GetService("RunService").Heartbeat:Connect(function()
-            updateFarmTime()
-            wait(1) -- Update every second
-        end)
-    else
-        -- Stop farm timer
-        if farmTimeUpdateConnection then
-            farmTimeUpdateConnection:Disconnect()
-            farmTimeUpdateConnection = nil
-        end
-    end
-end
-
--- Function to update mob kill count
-local function updateMobKillCount()
-    mobsKilled = mobsKilled + 1
-    mobsKilledLabel:Set("Mobs Killed: " .. mobsKilled)
-end
+-- Farm statistics paragraph
+PlayTab:AddParagraph("Farm Statistics", "Mobs Killed: 0\nFarm Time: 0m 0s")
 
 -- Reset Stats Button
-local ResetStatsButton = PlayTab:CreateButton({
+PlayTab:AddButton({
     Name = "Reset Farm Stats",
     Callback = function()
         mobsKilled = 0
-        farmStartTime = AutoFarmToggle.CurrentValue and os.time() or 0
-        mobsKilledLabel:Set("Mobs Killed: 0")
-        updateFarmTime()
+        farmStartTime = os.time()
+        PlayTab:UpdateParagraph("Farm Statistics", "Mobs Killed: 0\nFarm Time: 0m 0s")
         
-        Rayfield:Notify({
-            Title = "Stats Reset",
+        OrionLib:MakeNotification({
+            Name = "Stats Reset",
             Content = "Farm statistics have been reset",
-            Duration = 2,
-            Image = "refresh-cw", -- Lucide icon
+            Image = "rbxassetid://4483345998",
+            Time = 2
         })
-    end,
+    end
 })
 
 -- Add auto farm mob kill counter
@@ -651,8 +619,12 @@ local function hookMobDeath()
     local mobsFolder = workspace:FindFirstChild("Mobs")
     if mobsFolder then
         mobsFolder.ChildRemoved:Connect(function(child)
-            if AutoFarmToggle.CurrentValue then
-                updateMobKillCount()
+            if AutoSaveSystem.GetData("AutoFarm") then
+                mobsKilled = mobsKilled + 1
+                PlayTab:UpdateParagraph("Farm Statistics", "Mobs Killed: " .. mobsKilled .. 
+                                     "\nFarm Time: " .. 
+                                     math.floor((os.time() - farmStartTime) / 60) .. "m " .. 
+                                     (os.time() - farmStartTime) % 60 .. "s")
             end
         end)
     end
@@ -664,96 +636,115 @@ hookMobDeath()
 -- Try again when the workspace children change
 workspace.ChildAdded:Connect(function(child)
     if child.Name == "Mobs" then
-        wait(1) -- Small delay to ensure the folder is properly set up
+        task.wait(1) -- Small delay to ensure the folder is properly set up
         hookMobDeath()
     end
 end)
 
--- Add Config Tab for saving/loading
-local ConfigTab = Window:CreateTab("Config", 4483362458)
-
--- Config Section
-local ConfigSection = ConfigTab:CreateSection("Configuration")
+-- Config Tab Content
+local ConfigSection = ConfigTab:AddSection({
+    Name = "Configuration"
+})
 
 -- Save Config Button
-local SaveConfigButton = ConfigTab:CreateButton({
+ConfigTab:AddButton({
     Name = "Save Configuration",
     Callback = function()
-        ConfigSystem.SaveConfig()
-        Rayfield:Notify({
-            Title = "Configuration Saved",
+        AutoSaveSystem.SaveConfig()
+        OrionLib:MakeNotification({
+            Name = "Configuration Saved",
             Content = "Your settings have been saved!",
-            Duration = 2,
-            Image = "save", -- Lucide icon
+            Image = "rbxassetid://4483345998",
+            Time = 2
         })
-    end,
+    end
 })
 
 -- Reset Config Button
-local ResetConfigButton = ConfigTab:CreateButton({
+ConfigTab:AddButton({
     Name = "Reset Configuration",
     Callback = function()
-        ConfigSystem.CurrentConfig = table.clone(ConfigSystem.DefaultConfig)
-        ConfigSystem.SaveConfig()
+        -- Reset to default values
+        for key, value in pairs(AutoSaveSystem.DefaultConfig) do
+            AutoSaveSystem.UpdateData(key, value)
+        end
         
-        -- Update UI with default values
-        AutoRollToggle:Set(ConfigSystem.DefaultConfig.AutoRoll)
-        RollDelaySlider:Set(ConfigSystem.DefaultConfig.RollDelay)
-        AutoAttackToggle:Set(ConfigSystem.DefaultConfig.AutoAttack)
-        AttackDelaySlider:Set(ConfigSystem.DefaultConfig.AttackDelay)
-        MapDropdown:Set({})
-        CurrentMapLabel:Set("Selected Map: None")
-        AutoFarmToggle:Set(ConfigSystem.DefaultConfig.AutoFarm)
-        TeleportDistanceSlider:Set(ConfigSystem.DefaultConfig.TeleportDistance)
-        MobDropdown:Set({ConfigSystem.DefaultConfig.SelectedMob})
+        -- Update UI elements with default values
+        -- Main Tab
+        MainTab:UpdateToggle("AutoRoll", AutoSaveSystem.DefaultConfig.AutoRoll)
+        MainTab:UpdateSlider("RollDelay", AutoSaveSystem.DefaultConfig.RollDelay)
+        MainTab:UpdateToggle("AutoAttack", AutoSaveSystem.DefaultConfig.AutoAttack)
+        MainTab:UpdateSlider("AttackDelay", AutoSaveSystem.DefaultConfig.AttackDelay)
         
-        Rayfield:Notify({
-            Title = "Configuration Reset",
+        -- Map Tab
+        MapTab:UpdateDropdown("SelectedMap", AutoSaveSystem.DefaultConfig.SelectedMap)
+        MapTab:UpdateParagraph("Current Map", "Selected Map: None")
+        
+        -- Play Tab
+        PlayTab:UpdateToggle("AutoFarm", AutoSaveSystem.DefaultConfig.AutoFarm)
+        PlayTab:UpdateSlider("TeleportDistance", AutoSaveSystem.DefaultConfig.TeleportDistance)
+        PlayTab:UpdateDropdown("SelectedMob", AutoSaveSystem.DefaultConfig.SelectedMob)
+        
+        OrionLib:MakeNotification({
+            Name = "Configuration Reset",
             Content = "All settings have been reset to default!",
-            Duration = 2,
-            Image = "refresh-cw", -- Lucide icon
+            Image = "rbxassetid://4483345998",
+            Time = 2
         })
-    end,
+    end
 })
 
--- Auto Save Timer (save every 60 seconds)
-spawn(function()
-    while true do
-        wait(60)
-        ConfigSystem.SaveConfig()
+-- Info Section
+local InfoSection = ConfigTab:AddSection({
+    Name = "Information"
+})
+
+-- Add information
+ConfigTab:AddParagraph("About", "KaihonHub | Hunter\nCreated by DuongTuan\nUsing Orion UI Library")
+
+-- Handle game close
+game:GetService("Players").PlayerRemoving:Connect(function(plr)
+    if plr == player then
+        -- Save config on exit
+        AutoSaveSystem.SaveConfig()
+        
+        -- Clean up connections
+        if rollConnection then rollConnection:Disconnect() end
+        if attackConnection then attackConnection:Disconnect() end
+        if farmConnection then farmConnection:Disconnect() end
+        if farmTimeUpdateConnection then farmTimeUpdateConnection:Disconnect() end
+        
+        -- Destroy UI
+        OrionLib:Destroy()
     end
 end)
 
--- Save on game close
-game:GetService("Players").PlayerRemoving:Connect(function(plr)
-    if plr == player then
-        ConfigSystem.SaveConfig()
-    end
-end)
+-- Initialize the UI
+OrionLib:Init()
 
 -- Module return
 return {
-    UI = Window,
-    Config = ConfigSystem,
+    UI = OrionLib,
+    Config = AutoSaveSystem,
     StopRolling = function()
         if rollConnection then
             rollConnection:Disconnect()
             rollConnection = nil
-            AutoRollToggle:Set(false)
+            MainTab:UpdateToggle("AutoRoll", false)
         end
     end,
     StopAttacking = function()
         if attackConnection then
             attackConnection:Disconnect()
             attackConnection = nil
-            AutoAttackToggle:Set(false)
+            MainTab:UpdateToggle("AutoAttack", false)
         end
     end,
     StopFarming = function()
         if farmConnection then
             farmConnection:Disconnect()
             farmConnection = nil
-            AutoFarmToggle:Set(false)
+            PlayTab:UpdateToggle("AutoFarm", false)
         end
         
         if farmTimeUpdateConnection then
