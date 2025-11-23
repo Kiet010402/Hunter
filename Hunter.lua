@@ -70,13 +70,18 @@ local playerName = game:GetService("Players").LocalPlayer.Name
 -- Cấu hình UI
 local Window = Fluent:CreateWindow({
     Title = "HT HUB | Fish It",
-    SubTitle = "",
+    SubTitle = nil,
     TabWidth = 80,
     Size = UDim2.fromOffset(300, 220),
     Acrylic = true,
     Theme = "Amethyst",
     MinimizeKey = Enum.KeyCode.LeftControl
 })
+
+if not Window then
+    warn("Không thể tạo Window!")
+    return
+end
 
 -- Hệ thống Tạo Tab
 
@@ -85,17 +90,50 @@ local MainTab = Window:AddTab({ Title = "Farm", Icon = "rbxassetid://13311802307
 -- Tạo Tab Settings
 local SettingsTab = Window:AddTab({ Title = "Settings", Icon = "rbxassetid://13311798537" })
 
+if not MainTab then
+    warn("Không thể tạo MainTab!")
+    return
+end
+
+if not SettingsTab then
+    warn("Không thể tạo SettingsTab!")
+    return
+end
+
 -- Tab Main
 -- Section Auto Farm trong tab Main
 local AutoFarmSection = MainTab:AddSection("Auto Farm")
 
+if not AutoFarmSection then
+    warn("Không thể tạo AutoFarmSection!")
+    return
+end
+
 -- Lấy LocalPlayer và Character
 local LocalPlayer = game:GetService("Players").LocalPlayer
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+local Character = nil
+local HumanoidRootPart = nil
+
+-- Hàm để đảm bảo Character được load
+local function ensureCharacter()
+    if not Character or not Character.Parent then
+        Character = LocalPlayer.Character
+        if not Character then
+            Character = LocalPlayer.CharacterAdded:Wait()
+        end
+        HumanoidRootPart = Character:WaitForChild("HumanoidRootPart", 10)
+    end
+    return Character ~= nil and HumanoidRootPart ~= nil
+end
+
+-- Khởi tạo Character
+task.spawn(function()
+    ensureCharacter()
+end)
 
 -- Hàm di chuyển đến vị trí
 local function moveToPosition(targetPosition, tolerance)
+    if not ensureCharacter() then return false end
     tolerance = tolerance or 3
     local humanoid = Character:FindFirstChild("Humanoid")
     if not humanoid then return false end
@@ -112,12 +150,9 @@ local function moveToPosition(targetPosition, tolerance)
         task.wait(0.1)
         
         -- Kiểm tra nếu character bị thay đổi
-        if not Character or not Character.Parent then
-            Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-            HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
-            humanoid = Character:FindFirstChild("Humanoid")
-            if not humanoid then return false end
-        end
+        if not ensureCharacter() then return false end
+        humanoid = Character:FindFirstChild("Humanoid")
+        if not humanoid then return false end
     end
     
     return true
@@ -125,6 +160,11 @@ end
 
 -- Hàm thực thi Auto Fish
 local function executeFishing()
+    if not ensureCharacter() or not HumanoidRootPart then
+        warn("Không thể thực thi fishing: Character chưa sẵn sàng")
+        return false
+    end
+    
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
     local net = ReplicatedStorage:WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_net@0.2.0"):WaitForChild("net")
     
@@ -153,6 +193,9 @@ local function executeFishing()
             net:WaitForChild("RF/RequestFishingMinigameStarted"):InvokeServer(unpack(args))
         else
             -- Nếu chưa có vị trí lưu, sử dụng vị trí hiện tại
+            if not ensureCharacter() or not HumanoidRootPart then
+                return false
+            end
             local currentPos = HumanoidRootPart.Position
             local args = {
                 currentPos.X,
@@ -192,7 +235,7 @@ local SavePosButton = AutoFarmSection:AddButton({
     Title = "Save Pos",
     Description = "Lưu vị trí hiện tại",
     Callback = function()
-        if HumanoidRootPart then
+        if ensureCharacter() and HumanoidRootPart then
             local currentPos = HumanoidRootPart.Position
             ConfigSystem.CurrentConfig.savedPosition = {
                 x = currentPos.X,
@@ -201,6 +244,8 @@ local SavePosButton = AutoFarmSection:AddButton({
             }
             ConfigSystem.SaveConfig()
             print("Đã lưu vị trí: X=" .. currentPos.X .. ", Y=" .. currentPos.Y .. ", Z=" .. currentPos.Z)
+        else
+            warn("Không thể lưu vị trí: Character chưa sẵn sàng")
         end
     end
 })
@@ -216,30 +261,30 @@ local function setAutoFish(enabled)
         task.spawn(function()
             while autoFishRunning do
                 -- Kiểm tra và cập nhật Character nếu cần
-                if not Character or not Character.Parent then
-                    Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-                    HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
-                end
-                
-                -- Kiểm tra nếu có vị trí đã lưu
-                if ConfigSystem.CurrentConfig.savedPosition then
-                    local savedPos = ConfigSystem.CurrentConfig.savedPosition
-                    local targetPosition = Vector3.new(savedPos.x, savedPos.y, savedPos.z)
-                    local currentPos = HumanoidRootPart.Position
-                    
-                    -- Kiểm tra khoảng cách (tolerance 3 studs)
-                    if (currentPos - targetPosition).Magnitude > 3 then
-                        -- Di chuyển đến vị trí đã lưu
-                        moveToPosition(targetPosition, 3)
-                        task.wait(0.5) -- Đợi một chút sau khi di chuyển
+                if ensureCharacter() then
+                    -- Kiểm tra nếu có vị trí đã lưu
+                    if ConfigSystem.CurrentConfig.savedPosition then
+                        local savedPos = ConfigSystem.CurrentConfig.savedPosition
+                        local targetPosition = Vector3.new(savedPos.x, savedPos.y, savedPos.z)
+                        local currentPos = HumanoidRootPart.Position
+                        
+                        -- Kiểm tra khoảng cách (tolerance 3 studs)
+                        if (currentPos - targetPosition).Magnitude > 3 then
+                            -- Di chuyển đến vị trí đã lưu
+                            moveToPosition(targetPosition, 3)
+                            task.wait(0.5) -- Đợi một chút sau khi di chuyển
+                        end
                     end
+                    
+                    -- Thực thi fishing
+                    executeFishing()
+                    
+                    -- Đợi một chút trước khi lặp lại
+                    task.wait(1)
+                else
+                    -- Đợi nếu Character chưa sẵn sàng
+                    task.wait(1)
                 end
-                
-                -- Thực thi fishing
-                executeFishing()
-                
-                -- Đợi một chút trước khi lặp lại
-                task.wait(1)
             end
         end)
     else
@@ -261,7 +306,9 @@ local AutoFishToggle = AutoFarmSection:AddToggle({
 -- Cập nhật lại Character khi respawn
 LocalPlayer.CharacterAdded:Connect(function(newCharacter)
     Character = newCharacter
-    HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+    if Character then
+        HumanoidRootPart = Character:WaitForChild("HumanoidRootPart", 10)
+    end
 end)
 
 -- Tự động bật Auto Fish nếu đã được lưu trong config
