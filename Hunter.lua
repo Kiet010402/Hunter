@@ -2,12 +2,12 @@
 local UserInputService = game:GetService("UserInputService")
 
 --// Load UI Library với error handling
-local Library = nil
+local UILib = nil
 local success, err = pcall(function()
-    Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/lxte/lates-lib/main/Main.lua"))()
+    UILib = loadstring(game:HttpGet('https://raw.githubusercontent.com/StepBroFurious/Script/main/HydraHubUi.lua'))()
 end)
 
-if not success or not Library then
+if not success or not UILib then
     warn("Lỗi khi tải UI Library: " .. tostring(err))
     return
 end
@@ -17,7 +17,7 @@ local HttpService = game:GetService("HttpService")
 local ConfigSystem = {}
 ConfigSystem.FileName = "ScriptConfig_" .. game:GetService("Players").LocalPlayer.Name .. ".json"
 ConfigSystem.DefaultConfig = {
-    SavedPosition = nil, -- Lưu tọa độ {X, Y, Z}
+    SavedPosition = nil,
     AutoFishEnabled = false,
     SelectedPositionFile = nil
 }
@@ -65,18 +65,16 @@ local playerName = game:GetService("Players").LocalPlayer.Name
 local autoFishEnabled = ConfigSystem.CurrentConfig.AutoFishEnabled or false
 local savedPosition = ConfigSystem.CurrentConfig.SavedPosition
 local selectedPositionFile = ConfigSystem.CurrentConfig.SelectedPositionFile
-local selectedIsland = nil
 
 -- Thư mục lưu vị trí
 local PositionsFolder = "ScriptHub_Positions"
 pcall(function()
     if makefolder and isfolder and not isfolder(PositionsFolder) then
         makefolder(PositionsFolder)
-        end
-    end)
-    
+    end
+end)
+
 local positionNameInput = ""
-local positionDropdown = nil
 local positionOptions = {}
 
 -- Hàm sanitize tên file
@@ -168,443 +166,152 @@ local function buildDropdownOptions(files)
     return opts
 end
 
-local function refreshDropdownOptions()
-    local files = getPositionFiles()
-    positionOptions = buildDropdownOptions(files)
-
-    if positionDropdown then
-        if positionDropdown.SetOptions then
-            positionDropdown:SetOptions(positionOptions, selectedPositionFile)
-        elseif positionDropdown.Refresh then
-            positionDropdown:Refresh(positionOptions, selectedPositionFile)
-        end
-    end
-
-    return positionOptions
-end
-
 -- Tải tọa độ từ file đang chọn nếu có
 if selectedPositionFile then
     savedPosition = readPositionFromFile(selectedPositionFile) or savedPosition
 end
 
--- =======================
--- Island helper functions
--- =======================
-local islandDropdown = nil
+--// Tạo Hydra Hub UI
+local Window = UILib.new("DuongTuan Hub", game.Players.LocalPlayer.UserId, "Main")
 
-local function getIslandsFolder()
-    local workspace = game:GetService("Workspace")
-    return workspace:FindFirstChild("Islands")
-end
+--// Tab chính
+local MainCategory = Window:Category("Auto Farm", "http://www.roblox.com/asset/?id=8395621517")
+local MainButton = MainCategory:Button("Fishing", "http://www.roblox.com/asset/?id=8395747586")
+local MainSection = MainButton:Section("Main", "Left")
 
-local function getIslandOptions()
-    local islandsFolder = getIslandsFolder()
-    local options = {}
-    if not islandsFolder then
-        return options
+-- Input: Name Position
+MainSection:Textbox({
+    Title = "Name Position",
+    Description = "Nhập tên file vị trí (không cần .txt)",
+    Default = "",
+}, function(value)
+    positionNameInput = value or ""
+end)
+
+-- Button: Create Position
+MainSection:Button({
+    Title = "Create Position",
+    ButtonName = "CREATE",
+    Description = "Tạo file .txt để lưu tọa độ",
+}, function()
+    local sanitized = sanitizeFileName(positionNameInput)
+    if not sanitized then
+        print("Lỗi: Vui lòng nhập tên vị trí hợp lệ!")
+        return
     end
 
-    for _, child in ipairs(islandsFolder:GetChildren()) do
-        if child:IsA("Folder") then
-            options[child.Name] = child.Name
-        end
+    local fileName = sanitized
+    if not fileName:lower():match("%.txt$") then
+        fileName = fileName .. ".txt"
     end
 
-    return options
-end
-
-local function refreshIslandDropdown()
-    local options = getIslandOptions()
-    if islandDropdown then
-        if islandDropdown.SetOptions then
-            islandDropdown:SetOptions(options, selectedIsland)
-        elseif islandDropdown.Refresh then
-            islandDropdown:Refresh(options, selectedIsland)
-        end
-    end
-    return options
-end
-
-local function getNearestModelInIsland(islandName)
-    local islandsFolder = getIslandsFolder()
-    if not islandsFolder then
-        return nil
+    local path = PositionsFolder .. "/" .. fileName
+    if isfile and isfile(path) then
+        print("Thông báo: File này đã tồn tại!")
+        return
     end
 
-    local islandFolder = islandsFolder:FindFirstChild(islandName)
-    if not islandFolder then
-        return nil
+    local defaultPosition = { 0, 0, 0 }
+    if savePositionToFile(fileName, defaultPosition) then
+        print("Create Position: Đã tạo file: " .. fileName)
+    else
+        print("Lỗi: Không thể tạo file! (thiếu quyền?)")
+    end
+end)
+
+-- Button: Save Pos
+MainSection:Button({
+    Title = "Save Position",
+    ButtonName = "SAVE",
+    Description = "Lưu tọa độ hiện tại",
+}, function()
+    if not selectedPositionFile then
+        print("Lỗi: Chưa chọn file vị trí! Hãy dùng dropdown.")
+        return
     end
 
     local player = game:GetService("Players").LocalPlayer
-    local character = player.Character or player.CharacterAdded:Wait()
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    if not hrp then
-        return nil
-    end
-
-    local nearestModel = nil
-    local nearestDistance = math.huge
-
-    for _, descendant in ipairs(islandFolder:GetDescendants()) do
-        if descendant:IsA("Model") then
-            local primary = descendant.PrimaryPart
-            if not primary then
-                primary = descendant:FindFirstChildWhichIsA("BasePart")
-            end
-
-            if primary then
-                local distance = (primary.Position - hrp.Position).Magnitude
-                if distance < nearestDistance then
-                    nearestDistance = distance
-                    nearestModel = primary
-                end
-            end
-        elseif descendant:IsA("BasePart") then
-            local distance = (descendant.Position - hrp.Position).Magnitude
-            if distance < nearestDistance then
-                nearestDistance = distance
-                nearestModel = descendant
-            end
-        end
-    end
-
-    return nearestModel
-end
-
---// Themes
-local Themes = {
-    Light = {
-        --// Frames:
-        Primary = Color3.fromRGB(232, 232, 232),
-        Secondary = Color3.fromRGB(255, 255, 255),
-        Component = Color3.fromRGB(245, 245, 245),
-        Interactables = Color3.fromRGB(235, 235, 235),
-        --// Text:
-        Tab = Color3.fromRGB(50, 50, 50),
-        Title = Color3.fromRGB(0, 0, 0),
-        Description = Color3.fromRGB(100, 100, 100),
-        --// Outlines:
-        Shadow = Color3.fromRGB(255, 255, 255),
-        Outline = Color3.fromRGB(210, 210, 210),
-        --// Image:
-        Icon = Color3.fromRGB(100, 100, 100),
-    },
-    Dark = {
-        --// Frames:
-        Primary = Color3.fromRGB(30, 30, 30),
-        Secondary = Color3.fromRGB(35, 35, 35),
-        Component = Color3.fromRGB(40, 40, 40),
-        Interactables = Color3.fromRGB(45, 45, 45),
-        --// Text:
-        Tab = Color3.fromRGB(200, 200, 200),
-        Title = Color3.fromRGB(240, 240, 240),
-        Description = Color3.fromRGB(200, 200, 200),
-        --// Outlines:
-        Shadow = Color3.fromRGB(0, 0, 0),
-        Outline = Color3.fromRGB(40, 40, 40),
-        --// Image:
-        Icon = Color3.fromRGB(220, 220, 220),
-    },
-    Void = {
-        --// Frames:
-        Primary = Color3.fromRGB(15, 15, 15),
-        Secondary = Color3.fromRGB(20, 20, 20),
-        Component = Color3.fromRGB(25, 25, 25),
-        Interactables = Color3.fromRGB(30, 30, 30),
-        --// Text:
-        Tab = Color3.fromRGB(200, 200, 200),
-        Title = Color3.fromRGB(240, 240, 240),
-        Description = Color3.fromRGB(200, 200, 200),
-        --// Outlines:
-        Shadow = Color3.fromRGB(0, 0, 0),
-        Outline = Color3.fromRGB(40, 40, 40),
-        --// Image:
-        Icon = Color3.fromRGB(220, 220, 220),
-    },
-}
-
---// Create Window
-local Window = Library:CreateWindow({
-    Title = "DuongTuan Hub",
-    Theme = "Dark",
-    Size = UDim2.fromOffset(570, 370),
-    Transparency = 0.2,
-    Blurring = true,
-    MinimizeKeybind = Enum.KeyCode.LeftAlt,
-})
-
---// Set the default theme
-Window:SetTheme(Themes.Dark)
-
---// Tab Sections
-Window:AddTabSection({
-    Name = "Main",
-    Order = 1,
-})
-
-Window:AddTabSection({
-    Name = "Settings",
-    Order = 2,
-})
-
---// Tab [MAIN]
-local Main = Window:AddTab({
-    Title = "Auto Play",
-    Section = "Main",
-    Icon = "rbxassetid://13311802307"
-})
-
---// Tab [TELEPORT]
-local TeleportTab = Window:AddTab({
-    Title = "Teleport",
-    Section = "Main",
-    Icon = "rbxassetid://9069989666"
-})
-
-Window:AddSection({ Name = "Island", Tab = TeleportTab })
-
-islandDropdown = Window:AddDropdown({
-    Title = "Select Island",
-    Description = "Quét workspace.Islands và chọn đảo",
-    Tab = TeleportTab,
-    Options = refreshIslandDropdown(),
-    Callback = function(value)
-        selectedIsland = value
-        if value and value ~= "" then
-            Window:Notify({
-                Title = "Select Island",
-                Description = "Đang chọn đảo: " .. value,
-                Duration = 3
-            })
-        end
-    end,
-})
-
-Window:AddButton({
-    Title = "Refresh Islands",
-    Description = "Quét lại danh sách đảo",
-    Tab = TeleportTab,
-    Callback = function()
-        local options = refreshIslandDropdown()
-        local count = 0
-        for _ in pairs(options) do
-            count = count + 1
-        end
-        Window:Notify({
-            Title = "Refresh",
-            Description = string.format("Đã tìm thấy %d đảo.", count),
-            Duration = 3
-        })
-    end,
-})
-
-Window:AddButton({
-    Title = "Teleport To Island",
-    Description = "Dịch chuyển đến model gần nhất của đảo đã chọn",
-    Tab = TeleportTab,
-    Callback = function()
-        if not selectedIsland then
-            Window:Notify({
-                Title = "Lỗi",
-                Description = "Chưa chọn đảo!",
-                Duration = 3
-            })
-            return
-        end
-
-        local targetPart = getNearestModelInIsland(selectedIsland)
-        if targetPart then
-            local player = game:GetService("Players").LocalPlayer
-            local character = player.Character or player.CharacterAdded:Wait()
-            local hrp = character:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                hrp.CFrame = CFrame.new(targetPart.Position + Vector3.new(0, 3, 0))
-                Window:Notify({
-                    Title = "Teleport",
-                    Description = "Đã dịch chuyển đến đảo " .. selectedIsland,
-                    Duration = 3
-                })
-            end
-        else
-            Window:Notify({
-                Title = "Lỗi",
-                Description = "Không tìm thấy model trong đảo " .. tostring(selectedIsland),
-                Duration = 4
-            })
-        end
-    end,
-})
-
---// Section: Auto Farm
-Window:AddSection({ Name = "Auto Farm", Tab = Main })
-
--- Input Name Position
-Window:AddInput({
-    Title = "Name Position",
-    Description = "Nhập tên file vị trí (không cần .txt)",
-    Tab = Main,
-    Default = "",
-    Callback = function(Text)
-        positionNameInput = Text or ""
-    end,
-})
-
--- Button Create Position
-Window:AddButton({
-    Title = "Create Position",
-    Description = "Tạo file .txt để lưu tọa độ",
-    Tab = Main,
-    Callback = function()
-        local sanitized = sanitizeFileName(positionNameInput)
-        if not sanitized then
-            Window:Notify({
-                Title = "Lỗi",
-                Description = "Vui lòng nhập tên vị trí hợp lệ!",
-                Duration = 4
-            })
-            return
-        end
-
-        local fileName = sanitized
-        if not fileName:lower():match("%.txt$") then
-            fileName = fileName .. ".txt"
-        end
-
-        local path = PositionsFolder .. "/" .. fileName
-        if isfile and isfile(path) then
-            Window:Notify({
-                Title = "Thông báo",
-                Description = "File này đã tồn tại!",
-                Duration = 4
-            })
-            return
-        end
-
-        local defaultPosition = { 0, 0, 0 }
-        if savePositionToFile(fileName, defaultPosition) then
-            Window:Notify({
-                Title = "Create Position",
-                Description = "Đã tạo file: " .. fileName,
-                Duration = 4
-            })
-            refreshDropdownOptions()
-        else
-            Window:Notify({
-                Title = "Lỗi",
-                Description = "Không thể tạo file! (thiếu quyền?)",
-                Duration = 4
-            })
-        end
-    end,
-})
-
--- Dropdown Select Position
-positionDropdown = Window:AddDropdown({
-    Title = "Select Position",
-    Description = "Chọn file tọa độ để sử dụng",
-    Tab = Main,
-    Options = refreshDropdownOptions(),
-    Default = selectedPositionFile,
-    Callback = function(value)
-        if not value or value == "" then
-            selectedPositionFile = nil
-            ConfigSystem.CurrentConfig.SelectedPositionFile = nil
-            savedPosition = nil
-            return
-        end
-
-        selectedPositionFile = value
-        ConfigSystem.CurrentConfig.SelectedPositionFile = value
+    local character = player.Character
+    if character and character:FindFirstChild("HumanoidRootPart") then
+        local hrp = character.HumanoidRootPart
+        local pos = hrp.Position
+        savedPosition = { pos.X, pos.Y, pos.Z }
+        ConfigSystem.CurrentConfig.SavedPosition = savedPosition
         ConfigSystem.SaveConfig()
 
-        savedPosition = readPositionFromFile(value)
-        if savedPosition then
-            Window:Notify({
-                Title = "Select Position",
-                Description = "Đang sử dụng file: " .. value,
-                Duration = 4
-            })
+        if savePositionToFile(selectedPositionFile, savedPosition) then
+            print(string.format("Save Pos: Đã lưu tọa độ vào %s\nX=%.2f, Y=%.2f, Z=%.2f", selectedPositionFile, pos.X, pos.Y, pos.Z))
         else
-            Window:Notify({
-                Title = "Thông báo",
-                Description = "File chưa có tọa độ! Hãy Save Pos.",
-                Duration = 4
-            })
+            print("Lỗi: Không thể ghi file vị trí!")
         end
-    end,
-})
+    else
+        print("Lỗi: Không tìm thấy nhân vật!")
+    end
+end)
 
--- Button Refresh Position List
-Window:AddButton({
-    Title = "Refresh Positions",
-    Description = "Tải lại danh sách file tọa độ",
-    Tab = Main,
-    Callback = function()
-        local opts = refreshDropdownOptions()
-        local total = 0
-        for _ in pairs(opts) do
-            total = total + 1
-        end
+-- Dropdown: Select Position (tạo động từ file có sẵn)
+local positionDropdownUI = MainSection:Dropdown({
+    Title = "Select Position",
+    Description = "Chọn file tọa độ để sử dụng",
+    Default = selectedPositionFile or "None",
+    Options = getPositionFiles()
+}, function(value)
+    if not value or value == "None" or value == "" then
+        selectedPositionFile = nil
+        ConfigSystem.CurrentConfig.SelectedPositionFile = nil
+        savedPosition = nil
+        return
+    end
 
-        Window:Notify({
-            Title = "Refresh",
-            Description = string.format("Đã tải lại %d file vị trí.", total),
-            Duration = 3
-        })
-    end,
-})
+    selectedPositionFile = value
+    ConfigSystem.CurrentConfig.SelectedPositionFile = value
+    ConfigSystem.SaveConfig()
 
--- Button Save Pos
-Window:AddButton({
-    Title = "Save Pos",
-    Description = "Lưu tọa độ hiện tại",
-    Tab = Main,
-    Callback = function()
+    savedPosition = readPositionFromFile(value)
+    if savedPosition then
+        print("Select Position: Đang sử dụng file: " .. value)
+    else
+        print("Thông báo: File chưa có tọa độ! Hãy Save Pos.")
+    end
+end)
+
+-- Toggle: Auto Fish
+MainSection:Toggle({
+    Title = "Auto Fish",
+    Description = "Tự động câu cá",
+    Default = ConfigSystem.CurrentConfig.AutoFishEnabled or false
+}, function(value)
+    autoFishEnabled = value
+    ConfigSystem.CurrentConfig.AutoFishEnabled = value
+    ConfigSystem.SaveConfig()
+
+    if value then
         if not selectedPositionFile then
-            Window:Notify({
-                Title = "Lỗi",
-                Description = "Chưa chọn file vị trí! Hãy dùng dropdown.",
-                Duration = 4
-            })
+            print("Cảnh báo: Chưa chọn file vị trí! Vui lòng tạo/chọn file.")
             return
         end
 
-        local player = game:GetService("Players").LocalPlayer
-        local character = player.Character
-        if character and character:FindFirstChild("HumanoidRootPart") then
-            local hrp = character.HumanoidRootPart
-            local pos = hrp.Position
-            savedPosition = { pos.X, pos.Y, pos.Z }
-            ConfigSystem.CurrentConfig.SavedPosition = savedPosition
-            ConfigSystem.SaveConfig()
-
-            if savePositionToFile(selectedPositionFile, savedPosition) then
-                Window:Notify({
-                    Title = "Save Pos",
-                    Description = string.format("Đã lưu tọa độ vào %s\nX=%.2f, Y=%.2f, Z=%.2f", selectedPositionFile,
-                        pos.X, pos.Y, pos.Z),
-                    Duration = 5
-                })
-            else
-                Window:Notify({
-                    Title = "Lỗi",
-                    Description = "Không thể ghi file vị trí!",
-                    Duration = 4
-                })
-            end
+        if not savedPosition then
+            print("Cảnh báo: File chưa có tọa độ! Vui lòng Save Pos trước.")
         else
-            Window:Notify({
-                Title = "Lỗi",
-                Description = "Không tìm thấy nhân vật!",
-                Duration = 3
-            })
+            print("Auto Fish: Đã bật Auto Fish")
         end
-    end,
-})
+    else
+        print("Auto Fish: Đã tắt Auto Fish")
+    end
+end)
 
--- Hàm kiểm tra và di chuyển đến tọa độ đã lưu
+--// Tab Settings
+local SettingsCategory = Window:Category("Settings", "http://www.roblox.com/asset/?id=8395621517")
+local SettingsButton = SettingsCategory:Button("General", "http://www.roblox.com/asset/?id=8395747586")
+local SettingsSection = SettingsButton:Section("Settings", "Left")
+
+-- Label: Script Info
+SettingsSection:Label("Script Hub v1.0")
+SettingsSection:Label("Người chơi: " .. playerName)
+SettingsSection:Label("Nhấn Left Alt để ẩn/hiện giao diện")
+
+--// Hàm kiểm tra và di chuyển đến tọa độ đã lưu
 local function moveToSavedPosition()
     if not savedPosition then
         return false
@@ -620,24 +327,22 @@ local function moveToSavedPosition()
     local currentPos = hrp.Position
     local targetPos = Vector3.new(savedPosition[1], savedPosition[2], savedPosition[3])
 
-    -- Kiểm tra khoảng cách (nếu cách xa hơn 5 studs thì di chuyển)
     local distance = (currentPos - targetPos).Magnitude
     if distance > 5 then
         hrp.CFrame = CFrame.new(targetPos)
-        wait(0.5) -- Đợi một chút để đảm bảo di chuyển xong
+        wait(0.5)
         return true
     end
 
     return true
 end
 
--- Hàm thực thi Auto Fish
+--// Hàm thực thi Auto Fish
 local function executeAutoFish()
     if not autoFishEnabled or not selectedPositionFile or not savedPosition then
         return
     end
 
-    -- Kiểm tra và di chuyển đến tọa độ đã lưu nếu cần
     if savedPosition then
         moveToSavedPosition()
         wait(0.5)
@@ -645,9 +350,7 @@ local function executeAutoFish()
 
     local success, err = pcall(function()
         -- Bước 0: Equip Tool From Hotbar
-        local args = {
-            1
-        }
+        local args = { 1 }
         game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild(
             "sleitnick_net@0.2.0"):WaitForChild("net"):WaitForChild("RE/EquipToolFromHotbar"):FireServer(unpack(args))
 
@@ -665,8 +368,7 @@ local function executeAutoFish()
         }
         game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild(
             "sleitnick_net@0.2.0"):WaitForChild("net"):WaitForChild("RF/RequestFishingMinigameStarted"):InvokeServer(
-            unpack(
-                args))
+            unpack(args))
 
         -- Bước 3: Đợi 3 giây rồi Fire Fishing Completed
         wait(3)
@@ -676,97 +378,13 @@ local function executeAutoFish()
 
     if not success then
         warn("Lỗi Auto Fish: " .. tostring(err))
-                end
-            end
-            
--- Toggle Auto Fish
-Window:AddToggle({
-    Title = "Auto Fish",
-    Description = "Tự động câu cá",
-    Tab = Main,
-    Default = ConfigSystem.CurrentConfig.AutoFishEnabled or false,
-    Callback = function(Boolean)
-        autoFishEnabled = Boolean
-        ConfigSystem.CurrentConfig.AutoFishEnabled = Boolean
-        ConfigSystem.SaveConfig()
-
-        if Boolean then
-            if not selectedPositionFile then
-                Window:Notify({
-                    Title = "Cảnh báo",
-                    Description = "Chưa chọn file vị trí! Vui lòng tạo/chọn file.",
-                    Duration = 5
-                })
-                return
-            end
-
-            if not savedPosition then
-                Window:Notify({
-                    Title = "Cảnh báo",
-                    Description = "File chưa có tọa độ! Vui lòng Save Pos trước.",
-                    Duration = 5
-                })
-            else
-                Window:Notify({
-                    Title = "Auto Fish",
-                    Description = "Đã bật Auto Fish",
-                    Duration = 3
-                })
-            end
-        else
-            Window:Notify({
-                Title = "Auto Fish",
-                Description = "Đã tắt Auto Fish",
-                Duration = 3
-            })
-        end
-    end,
-})
-
---// Tab [SETTINGS]
-local Settings = Window:AddTab({
-    Title = "Settings",
-    Section = "Settings",
-    Icon = "rbxassetid://13311798537",
-})
-
--- Thông tin Script
-Window:AddParagraph({
-    Title = "Thông tin Script",
-    Description = "Script Hub v1.0\nNgười chơi: " .. playerName,
-    Tab = Settings
-})
-
-Window:AddParagraph({
-    Title = "Phím tắt",
-    Description = "Nhấn Left Alt để ẩn/hiện giao diện",
-    Tab = Settings
-})
-
--- Theme Selector
-Window:AddDropdown({
-    Title = "Chọn Theme",
-    Description = "Thay đổi giao diện",
-    Tab = Settings,
-    Options = {
-        ["Light Mode"] = "Light",
-        ["Dark Mode"] = "Dark",
-        ["Extra Dark"] = "Void",
-    },
-    Callback = function(Theme)
-        Window:SetTheme(Themes[Theme])
-        Window:Notify({
-            Title = "Theme",
-            Description = "Đã đổi theme thành " .. Theme,
-            Duration = 3
-        })
-    end,
-})
+    end
+end
 
 -- Auto Save Config
 local function AutoSaveConfig()
     spawn(function()
-        while wait(5) do -- Lưu mỗi 5 giây
+        while wait(5) do
             pcall(function()
                 ConfigSystem.SaveConfig()
             end)
@@ -780,7 +398,7 @@ AutoSaveConfig()
 -- Loop chính cho Auto Fish
 spawn(function()
     while true do
-        wait(1) -- Đợi 1 giây giữa mỗi lần thực hiện
+        wait(1)
 
         if autoFishEnabled then
             executeAutoFish()
@@ -788,7 +406,7 @@ spawn(function()
     end
 end)
 
--- Tạo icon floating để giả lập nút Left Alt cho mobile
+-- Tạo icon floating cho mobile
 task.spawn(function()
     local success, errorMsg = pcall(function()
         if not getgenv().LoadedMobileUI == true then
@@ -797,7 +415,6 @@ task.spawn(function()
             local ImageButton = Instance.new("ImageButton")
             local UICorner = Instance.new("UICorner")
 
-            -- Kiểm tra môi trường
             if syn and syn.protect_gui then
                 syn.protect_gui(OpenUI)
                 OpenUI.Parent = game:GetService("CoreGui")
@@ -816,14 +433,13 @@ task.spawn(function()
             ImageButton.BackgroundTransparency = 0.8
             ImageButton.Position = UDim2.new(0.9, 0, 0.1, 0)
             ImageButton.Size = UDim2.new(0, 50, 0, 50)
-            ImageButton.Image = "rbxassetid://13099788281" -- Có thể thay đổi logo
+            ImageButton.Image = "rbxassetid://13099788281"
             ImageButton.Draggable = true
             ImageButton.Transparency = 0.2
 
             UICorner.CornerRadius = UDim.new(0, 200)
             UICorner.Parent = ImageButton
 
-            -- Hiệu ứng hover
             ImageButton.MouseEnter:Connect(function()
                 game:GetService("TweenService"):Create(ImageButton, TweenInfo.new(0.2), {
                     BackgroundTransparency = 0.5,
@@ -838,7 +454,6 @@ task.spawn(function()
                 }):Play()
             end)
 
-            -- Khi click vào icon sẽ giả lập nút Left Alt
             ImageButton.MouseButton1Click:Connect(function()
                 game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.LeftAlt, false, game)
                 wait(0.1)
@@ -851,13 +466,6 @@ task.spawn(function()
         warn("Lỗi khi tạo nút Mobile UI: " .. tostring(errorMsg))
     end
 end)
-
--- Thông báo khi tải xong
-Window:Notify({
-    Title = "Script Hub",
-    Description = "Script đã tải thành công!\nNhấn Left Alt hoặc icon để ẩn/hiện UI",
-    Duration = 5
-})
 
 print("Script Hub đã tải thành công!")
 print("Sử dụng Left Alt hoặc icon floating để thu nhỏ/mở rộng UI")
