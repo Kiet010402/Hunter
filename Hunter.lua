@@ -71,9 +71,9 @@ local PositionsFolder = "ScriptHub_Positions"
 pcall(function()
     if makefolder and isfolder and not isfolder(PositionsFolder) then
         makefolder(PositionsFolder)
-    end
-end)
-
+        end
+    end)
+    
 local positionNameInput = ""
 local positionDropdown = nil
 local positionOptions = {}
@@ -130,7 +130,7 @@ local function readPositionFromFile(fileName)
     end)
 
     if success and data and data.X and data.Y and data.Z then
-        return {data.X, data.Y, data.Z}
+        return { data.X, data.Y, data.Z }
     end
 
     return nil
@@ -369,6 +369,26 @@ positionDropdown = Window:AddDropdown({
     end,
 })
 
+-- Button Refresh Position List
+Window:AddButton({
+    Title = "Refresh Positions",
+    Description = "Tải lại danh sách file tọa độ",
+    Tab = Main,
+    Callback = function()
+        local opts = refreshDropdownOptions()
+        local total = 0
+        for _ in pairs(opts) do
+            total = total + 1
+        end
+
+        Window:Notify({
+            Title = "Refresh",
+            Description = string.format("Đã tải lại %d file vị trí.", total),
+            Duration = 3
+        })
+    end,
+})
+
 -- Button Save Pos
 Window:AddButton({
     Title = "Save Pos",
@@ -396,7 +416,8 @@ Window:AddButton({
             if savePositionToFile(selectedPositionFile, savedPosition) then
                 Window:Notify({
                     Title = "Save Pos",
-                    Description = string.format("Đã lưu tọa độ vào %s\nX=%.2f, Y=%.2f, Z=%.2f", selectedPositionFile, pos.X, pos.Y, pos.Z),
+                    Description = string.format("Đã lưu tọa độ vào %s\nX=%.2f, Y=%.2f, Z=%.2f", selectedPositionFile,
+                        pos.X, pos.Y, pos.Z),
                     Duration = 5
                 })
             else
@@ -477,8 +498,8 @@ local function executeAutoFish()
         }
         game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild(
             "sleitnick_net@0.2.0"):WaitForChild("net"):WaitForChild("RF/RequestFishingMinigameStarted"):InvokeServer(
-        unpack(
-            args))
+            unpack(
+                args))
 
         -- Bước 3: Đợi 3 giây rồi Fire Fishing Completed
         wait(3)
@@ -582,10 +603,10 @@ local function AutoSaveConfig()
             pcall(function()
                 ConfigSystem.SaveConfig()
             end)
-                            end
-                        end)
-                    end
-                    
+        end
+    end)
+end
+
 -- Thực thi tự động lưu cấu hình
 AutoSaveConfig()
 
@@ -597,9 +618,9 @@ spawn(function()
         if autoFishEnabled then
             executeAutoFish()
         end
-                end
-            end)
-            
+    end
+end)
+
 -- Tạo icon floating để giả lập nút Left Alt cho mobile
 task.spawn(function()
     local success, errorMsg = pcall(function()
