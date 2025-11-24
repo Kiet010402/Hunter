@@ -141,7 +141,7 @@ Window:AddTabSection({
 
 --// Tab [MAIN]
 local Main = Window:AddTab({
-    Title = "Main",
+    Title = "Auto Play",
     Section = "Main",
     Icon = "rbxassetid://13311802307"
 })
@@ -243,8 +243,8 @@ local function executeAutoFish()
         unpack(
             args))
 
-        -- Bước 3: Đợi 4 giây rồi Fire Fishing Completed
-        wait(4)
+        -- Bước 3: Đợi 3 giây rồi Fire Fishing Completed
+        wait(3)
         game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild(
             "sleitnick_net@0.2.0"):WaitForChild("net"):WaitForChild("RE/FishingCompleted"):FireServer()
     end)
@@ -346,7 +346,7 @@ AutoSaveConfig()
 -- Loop chính cho Auto Fish
 spawn(function()
     while true do
-        wait(3) -- Đợi 3 giây giữa mỗi lần thực hiện
+        wait(1) -- Đợi 1 giây giữa mỗi lần thực hiện
 
         if autoFishEnabled then
             executeAutoFish()
