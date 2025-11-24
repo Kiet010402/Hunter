@@ -65,6 +65,7 @@ local playerName = game:GetService("Players").LocalPlayer.Name
 local autoFishEnabled = ConfigSystem.CurrentConfig.AutoFishEnabled or false
 local savedPosition = ConfigSystem.CurrentConfig.SavedPosition
 local selectedPositionFile = ConfigSystem.CurrentConfig.SelectedPositionFile
+local selectedIsland = nil
 
 -- Thư mục lưu vị trí
 local PositionsFolder = "ScriptHub_Positions"
@@ -187,6 +188,91 @@ if selectedPositionFile then
     savedPosition = readPositionFromFile(selectedPositionFile) or savedPosition
 end
 
+-- =======================
+-- Island helper functions
+-- =======================
+local islandDropdown = nil
+
+local function getIslandsFolder()
+    local workspace = game:GetService("Workspace")
+    return workspace:FindFirstChild("Islands")
+end
+
+local function getIslandOptions()
+    local islandsFolder = getIslandsFolder()
+    local options = {}
+    if not islandsFolder then
+        return options
+    end
+
+    for _, child in ipairs(islandsFolder:GetChildren()) do
+        if child:IsA("Folder") then
+            options[child.Name] = child.Name
+        end
+    end
+
+    return options
+end
+
+local function refreshIslandDropdown()
+    local options = getIslandOptions()
+    if islandDropdown then
+        if islandDropdown.SetOptions then
+            islandDropdown:SetOptions(options, selectedIsland)
+        elseif islandDropdown.Refresh then
+            islandDropdown:Refresh(options, selectedIsland)
+        end
+    end
+    return options
+end
+
+local function getNearestModelInIsland(islandName)
+    local islandsFolder = getIslandsFolder()
+    if not islandsFolder then
+        return nil
+    end
+
+    local islandFolder = islandsFolder:FindFirstChild(islandName)
+    if not islandFolder then
+        return nil
+    end
+
+    local player = game:GetService("Players").LocalPlayer
+    local character = player.Character or player.CharacterAdded:Wait()
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        return nil
+    end
+
+    local nearestModel = nil
+    local nearestDistance = math.huge
+
+    for _, descendant in ipairs(islandFolder:GetDescendants()) do
+        if descendant:IsA("Model") then
+            local primary = descendant.PrimaryPart
+            if not primary then
+                primary = descendant:FindFirstChildWhichIsA("BasePart")
+            end
+
+            if primary then
+                local distance = (primary.Position - hrp.Position).Magnitude
+                if distance < nearestDistance then
+                    nearestDistance = distance
+                    nearestModel = primary
+                end
+            end
+        elseif descendant:IsA("BasePart") then
+            local distance = (descendant.Position - hrp.Position).Magnitude
+            if distance < nearestDistance then
+                nearestDistance = distance
+                nearestModel = descendant
+            end
+        end
+    end
+
+    return nearestModel
+end
+
 --// Themes
 local Themes = {
     Light = {
@@ -268,6 +354,87 @@ local Main = Window:AddTab({
     Title = "Auto Play",
     Section = "Main",
     Icon = "rbxassetid://13311802307"
+})
+
+--// Tab [TELEPORT]
+local TeleportTab = Window:AddTab({
+    Title = "Teleport",
+    Section = "Main",
+    Icon = "rbxassetid://9069989666"
+})
+
+Window:AddSection({ Name = "Island", Tab = TeleportTab })
+
+islandDropdown = Window:AddDropdown({
+    Title = "Select Island",
+    Description = "Quét workspace.Islands và chọn đảo",
+    Tab = TeleportTab,
+    Options = refreshIslandDropdown(),
+    Callback = function(value)
+        selectedIsland = value
+        if value and value ~= "" then
+            Window:Notify({
+                Title = "Select Island",
+                Description = "Đang chọn đảo: " .. value,
+                Duration = 3
+            })
+        end
+    end,
+})
+
+Window:AddButton({
+    Title = "Refresh Islands",
+    Description = "Quét lại danh sách đảo",
+    Tab = TeleportTab,
+    Callback = function()
+        local options = refreshIslandDropdown()
+        local count = 0
+        for _ in pairs(options) do
+            count = count + 1
+        end
+        Window:Notify({
+            Title = "Refresh",
+            Description = string.format("Đã tìm thấy %d đảo.", count),
+            Duration = 3
+        })
+    end,
+})
+
+Window:AddButton({
+    Title = "Teleport To Island",
+    Description = "Dịch chuyển đến model gần nhất của đảo đã chọn",
+    Tab = TeleportTab,
+    Callback = function()
+        if not selectedIsland then
+            Window:Notify({
+                Title = "Lỗi",
+                Description = "Chưa chọn đảo!",
+                Duration = 3
+            })
+            return
+        end
+
+        local targetPart = getNearestModelInIsland(selectedIsland)
+        if targetPart then
+            local player = game:GetService("Players").LocalPlayer
+            local character = player.Character or player.CharacterAdded:Wait()
+            local hrp = character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                hrp.CFrame = CFrame.new(targetPart.Position + Vector3.new(0, 3, 0))
+                Window:Notify({
+                    Title = "Teleport",
+                    Description = "Đã dịch chuyển đến đảo " .. selectedIsland,
+                    Duration = 3
+                })
+            end
+        else
+            Window:Notify({
+                Title = "Lỗi",
+                Description = "Không tìm thấy model trong đảo " .. tostring(selectedIsland),
+                Duration = 4
+            })
+        end
+    end,
 })
 
 --// Section: Auto Farm
