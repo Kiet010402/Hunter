@@ -1,28 +1,23 @@
--- Load UI Library với error handling
+--// Services
+local UserInputService = game:GetService("UserInputService")
+
+--// Load UI Library với error handling
+local Library = nil
 local success, err = pcall(function()
-    Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
-    SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
-    InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+    Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/lxte/lates-lib/main/Main.lua"))()
 end)
 
-if not success then
+if not success or not Library then
     warn("Lỗi khi tải UI Library: " .. tostring(err))
-    return
-end
-
--- Đợi đến khi Fluent được tải hoàn tất
-if not Fluent then
-    warn("Không thể tải thư viện Fluent!")
     return
 end
 
 -- Hệ thống lưu trữ cấu hình
 local ConfigSystem = {}
-ConfigSystem.FileName = "HTHubFishIt_" .. game:GetService("Players").LocalPlayer.Name .. ".json"
+ConfigSystem.FileName = "ScriptConfig_" .. game:GetService("Players").LocalPlayer.Name .. ".json"
 ConfigSystem.DefaultConfig = {
-    -- Auto Farm Settings
-    savedPosition = nil, -- {x, y, z}
-    autoFishEnabled = false
+    SavedPosition = nil, -- Lưu tọa độ {X, Y, Z}
+    AutoFishEnabled = false
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -46,7 +41,7 @@ ConfigSystem.LoadConfig = function()
         end
         return nil
     end)
-    
+
     if success and content then
         local data = game:GetService("HttpService"):JSONDecode(content)
         ConfigSystem.CurrentConfig = data
@@ -61,241 +56,277 @@ end
 -- Tải cấu hình khi khởi động
 ConfigSystem.LoadConfig()
 
--- Biến lưu trạng thái của tab Main
-local autoFishEnabled = ConfigSystem.CurrentConfig.autoFishEnabled or false
-
 -- Lấy tên người chơi
 local playerName = game:GetService("Players").LocalPlayer.Name
 
--- Cấu hình UI
-local Window = Fluent:CreateWindow({
-    Title = "HT HUB | Fish It",
-    SubTitle = "",
-    TabWidth = 80,
-    Size = UDim2.fromOffset(300, 220),
-    Acrylic = true,
-    Theme = "Amethyst",
-    MinimizeKey = Enum.KeyCode.LeftControl
+-- Biến lưu trạng thái Auto Fish
+local autoFishEnabled = ConfigSystem.CurrentConfig.AutoFishEnabled or false
+local savedPosition = ConfigSystem.CurrentConfig.SavedPosition
+
+--// Themes
+local Themes = {
+    Light = {
+        --// Frames:
+        Primary = Color3.fromRGB(232, 232, 232),
+        Secondary = Color3.fromRGB(255, 255, 255),
+        Component = Color3.fromRGB(245, 245, 245),
+        Interactables = Color3.fromRGB(235, 235, 235),
+        --// Text:
+        Tab = Color3.fromRGB(50, 50, 50),
+        Title = Color3.fromRGB(0, 0, 0),
+        Description = Color3.fromRGB(100, 100, 100),
+        --// Outlines:
+        Shadow = Color3.fromRGB(255, 255, 255),
+        Outline = Color3.fromRGB(210, 210, 210),
+        --// Image:
+        Icon = Color3.fromRGB(100, 100, 100),
+    },
+    Dark = {
+        --// Frames:
+        Primary = Color3.fromRGB(30, 30, 30),
+        Secondary = Color3.fromRGB(35, 35, 35),
+        Component = Color3.fromRGB(40, 40, 40),
+        Interactables = Color3.fromRGB(45, 45, 45),
+        --// Text:
+        Tab = Color3.fromRGB(200, 200, 200),
+        Title = Color3.fromRGB(240, 240, 240),
+        Description = Color3.fromRGB(200, 200, 200),
+        --// Outlines:
+        Shadow = Color3.fromRGB(0, 0, 0),
+        Outline = Color3.fromRGB(40, 40, 40),
+        --// Image:
+        Icon = Color3.fromRGB(220, 220, 220),
+    },
+    Void = {
+        --// Frames:
+        Primary = Color3.fromRGB(15, 15, 15),
+        Secondary = Color3.fromRGB(20, 20, 20),
+        Component = Color3.fromRGB(25, 25, 25),
+        Interactables = Color3.fromRGB(30, 30, 30),
+        --// Text:
+        Tab = Color3.fromRGB(200, 200, 200),
+        Title = Color3.fromRGB(240, 240, 240),
+        Description = Color3.fromRGB(200, 200, 200),
+        --// Outlines:
+        Shadow = Color3.fromRGB(0, 0, 0),
+        Outline = Color3.fromRGB(40, 40, 40),
+        --// Image:
+        Icon = Color3.fromRGB(220, 220, 220),
+    },
+}
+
+--// Create Window
+local Window = Library:CreateWindow({
+    Title = "DuongTuan Hub",
+    Theme = "Dark",
+    Size = UDim2.fromOffset(570, 370),
+    Transparency = 0.2,
+    Blurring = true,
+    MinimizeKeybind = Enum.KeyCode.LeftAlt,
 })
 
--- Hệ thống Tạo Tab
+--// Set the default theme
+Window:SetTheme(Themes.Dark)
 
--- Tạo Tab Main
-local MainTab = Window:AddTab({ Title = "Main", Icon = "rbxassetid://13311802307" })
+--// Tab Sections
+Window:AddTabSection({
+    Name = "Main",
+    Order = 1,
+})
 
--- Tạo Tab Settings
-local SettingsTab = Window:AddTab({ Title = "Settings", Icon = "rbxassetid://13311798537" })
+Window:AddTabSection({
+    Name = "Settings",
+    Order = 2,
+})
 
--- Tab Main
--- Section Auto Farm trong tab Main
-local AutoFarmSection = MainTab:AddSection("Auto Farm")
+--// Tab [MAIN]
+local Main = Window:AddTab({
+    Title = "Main",
+    Section = "Main",
+    Icon = "rbxassetid://13311802307"
+})
 
--- Tab Settings
--- Settings tab configuration
-local SettingsSection = SettingsTab:AddSection("Script Settings")
+--// Section: Auto Farm
+Window:AddSection({ Name = "Auto Farm", Tab = Main })
 
+-- Button Save Pos
+Window:AddButton({
+    Title = "Save Pos",
+    Description = "Lưu tọa độ hiện tại",
+    Tab = Main,
+    Callback = function()
+        local player = game:GetService("Players").LocalPlayer
+        local character = player.Character
+        if character and character:FindFirstChild("HumanoidRootPart") then
+            local hrp = character.HumanoidRootPart
+            local pos = hrp.Position
+            savedPosition = { pos.X, pos.Y, pos.Z }
+            ConfigSystem.CurrentConfig.SavedPosition = savedPosition
+            ConfigSystem.SaveConfig()
 
--- Code Chính Fish It
--- Lấy LocalPlayer và Character
-local LocalPlayer = game:GetService("Players").LocalPlayer
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
-
--- Hàm di chuyển đến vị trí
-local function moveToPosition(targetPosition, tolerance)
-    tolerance = tolerance or 3
-    local humanoid = Character:FindFirstChild("Humanoid")
-    if not humanoid then return false end
-    
-    local startTime = tick()
-    local maxTime = 10 -- Tối đa 10 giây để di chuyển
-    
-    while (HumanoidRootPart.Position - targetPosition).Magnitude > tolerance do
-        if tick() - startTime > maxTime then
-            return false -- Timeout
+            Window:Notify({
+                Title = "Save Pos",
+                Description = string.format("Đã lưu tọa độ: X=%.2f, Y=%.2f, Z=%.2f", pos.X, pos.Y, pos.Z),
+                Duration = 5
+            })
+        else
+            Window:Notify({
+                Title = "Lỗi",
+                Description = "Không tìm thấy nhân vật!",
+                Duration = 3
+            })
         end
-        
-        humanoid:MoveTo(targetPosition)
-        task.wait(0.1)
-        
-        -- Kiểm tra nếu character bị thay đổi
-        if not Character or not Character.Parent then
-            Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-            HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
-            humanoid = Character:FindFirstChild("Humanoid")
-            if not humanoid then return false end
-        end
+    end,
+})
+
+-- Hàm kiểm tra và di chuyển đến tọa độ đã lưu
+local function moveToSavedPosition()
+    if not savedPosition then
+        return false
     end
-    
+
+    local player = game:GetService("Players").LocalPlayer
+    local character = player.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then
+        return false
+    end
+
+    local hrp = character.HumanoidRootPart
+    local currentPos = hrp.Position
+    local targetPos = Vector3.new(savedPosition[1], savedPosition[2], savedPosition[3])
+
+    -- Kiểm tra khoảng cách (nếu cách xa hơn 5 studs thì di chuyển)
+    local distance = (currentPos - targetPos).Magnitude
+    if distance > 5 then
+        hrp.CFrame = CFrame.new(targetPos)
+        wait(0.5) -- Đợi một chút để đảm bảo di chuyển xong
+        return true
+    end
+
     return true
 end
 
 -- Hàm thực thi Auto Fish
-local function executeFishing()
-    local ReplicatedStorage = game:GetService("ReplicatedStorage")
-    local net = ReplicatedStorage:WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_net@0.2.0"):WaitForChild("net")
-    
-    -- Bước 1: Charge Fishing Rod
-    local success1, err1 = pcall(function()
-        net:WaitForChild("RF/ChargeFishingRod"):InvokeServer()
-    end)
-    
-    if not success1 then
-        warn("Lỗi Bước 1 - ChargeFishingRod:", err1)
-        return false
+local function executeAutoFish()
+    if not autoFishEnabled then
+        return
     end
-    
-    -- Đợi 1 giây
-    task.wait(1)
-    
-    -- Bước 2: Request Fishing Minigame
-    local success2, err2 = pcall(function()
-        if ConfigSystem.CurrentConfig.savedPosition then
-            local pos = ConfigSystem.CurrentConfig.savedPosition
-            local args = {
-                pos.x,
-                pos.y,
-                pos.z
-            }
-            net:WaitForChild("RF/RequestFishingMinigameStarted"):InvokeServer(unpack(args))
-        else
-            -- Nếu chưa có vị trí lưu, sử dụng vị trí hiện tại
-            local currentPos = HumanoidRootPart.Position
-            local args = {
-                currentPos.X,
-                currentPos.Y,
-                currentPos.Z
-            }
-            net:WaitForChild("RF/RequestFishingMinigameStarted"):InvokeServer(unpack(args))
-        end
-    end)
-    
-    if not success2 then
-        warn("Lỗi Bước 2 - RequestFishingMinigameStarted:", err2)
-        return false
-    end
-    
-    -- Đợi 1.5 giây
-    task.wait(1.5)
-    
-    -- Bước 3: Fishing Completed
-    local success3, err3 = pcall(function()
-        net:WaitForChild("RE/FishingCompleted"):FireServer()
-    end)
-    
-    if not success3 then
-        warn("Lỗi Bước 3 - FishingCompleted:", err3)
-        return false
-    end
-    
-    return true
-end
 
--- Biến để kiểm soát Auto Fish loop
-local autoFishRunning = false
-
--- Button Save Pos
-local SavePosButton = AutoFarmSection:AddButton({
-    Title = "Save Pos",
-    Description = "Lưu vị trí hiện tại",
-    Callback = function()
-        if HumanoidRootPart then
-            local currentPos = HumanoidRootPart.Position
-            ConfigSystem.CurrentConfig.savedPosition = {
-                x = currentPos.X,
-                y = currentPos.Y,
-                z = currentPos.Z
-            }
-            ConfigSystem.SaveConfig()
-            print("Đã lưu vị trí: X=" .. currentPos.X .. ", Y=" .. currentPos.Y .. ", Z=" .. currentPos.Z)
-        end
+    -- Kiểm tra và di chuyển đến tọa độ đã lưu nếu cần
+    if savedPosition then
+        moveToSavedPosition()
+        wait(0.5)
     end
-})
 
--- Hàm để bật/tắt Auto Fish
-local function setAutoFish(enabled)
-    ConfigSystem.CurrentConfig.autoFishEnabled = enabled
-    ConfigSystem.SaveConfig()
-    
-    if enabled then
-        -- Bật Auto Fish
-        autoFishRunning = true
-        task.spawn(function()
-            while autoFishRunning do
-                -- Kiểm tra và cập nhật Character nếu cần
-                if not Character or not Character.Parent then
-                    Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-                    HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+    local success, err = pcall(function()
+        -- Bước 0: Equip Tool From Hotbar
+        local args = {
+            1
+        }
+        game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild(
+            "sleitnick_net@0.2.0"):WaitForChild("net"):WaitForChild("RE/EquipToolFromHotbar"):FireServer(unpack(args))
+
+        -- Bước 1: Charge Fishing Rod
+        wait(0.5)
+        game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild(
+            "sleitnick_net@0.2.0"):WaitForChild("net"):WaitForChild("RF/ChargeFishingRod"):InvokeServer()
+
+        -- Bước 2: Đợi 1 giây rồi Request Fishing Minigame
+        wait(1)
+        local args = {
+            -1.233184814453125,
+            0.9940152067553181,
+            1763908713.407927
+        }
+        game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild(
+            "sleitnick_net@0.2.0"):WaitForChild("net"):WaitForChild("RF/RequestFishingMinigameStarted"):InvokeServer(
+        unpack(
+            args))
+
+        -- Bước 3: Đợi 4 giây rồi Fire Fishing Completed
+        wait(4)
+        game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild(
+            "sleitnick_net@0.2.0"):WaitForChild("net"):WaitForChild("RE/FishingCompleted"):FireServer()
+    end)
+
+    if not success then
+        warn("Lỗi Auto Fish: " .. tostring(err))
                 end
-                
-                -- Kiểm tra nếu có vị trí đã lưu
-                if ConfigSystem.CurrentConfig.savedPosition then
-                    local savedPos = ConfigSystem.CurrentConfig.savedPosition
-                    local targetPosition = Vector3.new(savedPos.x, savedPos.y, savedPos.z)
-                    local currentPos = HumanoidRootPart.Position
-                    
-                    -- Kiểm tra khoảng cách (tolerance 3 studs)
-                    if (currentPos - targetPosition).Magnitude > 3 then
-                        -- Di chuyển đến vị trí đã lưu
-                        moveToPosition(targetPosition, 3)
-                        task.wait(0.5) -- Đợi một chút sau khi di chuyển
-                    end
-                end
-                
-                -- Thực thi fishing
-                executeFishing()
-                
-                -- Đợi một chút trước khi lặp lại
-                task.wait(1)
             end
-        end)
-    else
-        -- Tắt Auto Fish
-        autoFishRunning = false
-    end
-end
-
+            
 -- Toggle Auto Fish
-local AutoFishToggle = AutoFarmSection:AddToggle({
+Window:AddToggle({
     Title = "Auto Fish",
     Description = "Tự động câu cá",
-    Default = ConfigSystem.CurrentConfig.autoFishEnabled or false,
-    Callback = function(value)
-        setAutoFish(value)
-    end
+    Tab = Main,
+    Default = ConfigSystem.CurrentConfig.AutoFishEnabled or false,
+    Callback = function(Boolean)
+        autoFishEnabled = Boolean
+        ConfigSystem.CurrentConfig.AutoFishEnabled = Boolean
+        ConfigSystem.SaveConfig()
+
+        if Boolean then
+            if not savedPosition then
+                Window:Notify({
+                    Title = "Cảnh báo",
+                    Description = "Chưa lưu tọa độ! Vui lòng Save Pos trước.",
+                    Duration = 5
+                })
+            else
+                Window:Notify({
+                    Title = "Auto Fish",
+                    Description = "Đã bật Auto Fish",
+                    Duration = 3
+                })
+            end
+        else
+            Window:Notify({
+                Title = "Auto Fish",
+                Description = "Đã tắt Auto Fish",
+                Duration = 3
+            })
+        end
+    end,
 })
 
--- Cập nhật lại Character khi respawn
-LocalPlayer.CharacterAdded:Connect(function(newCharacter)
-    Character = newCharacter
-    HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
-end)
-
--- Tự động bật Auto Fish nếu đã được lưu trong config
-task.spawn(function()
-    task.wait(1) -- Đợi một chút để đảm bảo mọi thứ đã sẵn sàng
-    if ConfigSystem.CurrentConfig.autoFishEnabled then
-        setAutoFish(true)
-    end
-end)
-
--- Integration with SaveManager
-SaveManager:SetLibrary(Fluent)
-InterfaceManager:SetLibrary(Fluent)
-
--- Thay đổi cách lưu cấu hình để sử dụng tên người chơi
-InterfaceManager:SetFolder("HTHubFishIt")
-SaveManager:SetFolder("HTHubFishIt/" .. playerName)
-
--- Thêm thông tin vào tab Settings
-SettingsTab:AddParagraph({
-    Title = "Cấu hình tự động",
-    Content = "Cấu hình của bạn đang được tự động lưu theo tên nhân vật: " .. playerName
+--// Tab [SETTINGS]
+local Settings = Window:AddTab({
+    Title = "Settings",
+    Section = "Settings",
+    Icon = "rbxassetid://13311798537",
 })
 
-SettingsTab:AddParagraph({
+-- Thông tin Script
+Window:AddParagraph({
+    Title = "Thông tin Script",
+    Description = "Script Hub v1.0\nNgười chơi: " .. playerName,
+    Tab = Settings
+})
+
+Window:AddParagraph({
     Title = "Phím tắt",
-    Content = "Nhấn LeftControl để ẩn/hiện giao diện"
+    Description = "Nhấn Left Alt để ẩn/hiện giao diện",
+    Tab = Settings
+})
+
+-- Theme Selector
+Window:AddDropdown({
+    Title = "Chọn Theme",
+    Description = "Thay đổi giao diện",
+    Tab = Settings,
+    Options = {
+        ["Light Mode"] = "Light",
+        ["Dark Mode"] = "Dark",
+        ["Extra Dark"] = "Void",
+    },
+    Callback = function(Theme)
+        Window:SetTheme(Themes[Theme])
+        Window:Notify({
+            Title = "Theme",
+            Description = "Đã đổi theme thành " .. Theme,
+            Duration = 3
+        })
+    end,
 })
 
 -- Auto Save Config
@@ -305,42 +336,33 @@ local function AutoSaveConfig()
             pcall(function()
                 ConfigSystem.SaveConfig()
             end)
-        end
-    end)
-end
-
+                            end
+                        end)
+                    end
+                    
 -- Thực thi tự động lưu cấu hình
 AutoSaveConfig()
 
--- Thêm event listener để lưu ngay khi thay đổi giá trị
-local function setupSaveEvents()
-    for _, tab in pairs({MainTab, SettingsTab}) do
-        if tab and tab._components then
-            for _, element in pairs(tab._components) do
-                if element and element.OnChanged then
-                    element.OnChanged:Connect(function()
-                        pcall(function()
-                            ConfigSystem.SaveConfig()
-                        end)
-                    end)
-                end
-            end
+-- Loop chính cho Auto Fish
+spawn(function()
+    while true do
+        wait(3) -- Đợi 3 giây giữa mỗi lần thực hiện
+
+        if autoFishEnabled then
+            executeAutoFish()
         end
-    end
-end
-
--- Thiết lập events
-setupSaveEvents()
-
--- Tạo logo để mở lại UI khi đã minimize
+                end
+            end)
+            
+-- Tạo icon floating để giả lập nút Left Alt cho mobile
 task.spawn(function()
     local success, errorMsg = pcall(function()
-        if not getgenv().LoadedMobileUI == true then 
+        if not getgenv().LoadedMobileUI == true then
             getgenv().LoadedMobileUI = true
             local OpenUI = Instance.new("ScreenGui")
             local ImageButton = Instance.new("ImageButton")
             local UICorner = Instance.new("UICorner")
-            
+
             -- Kiểm tra môi trường
             if syn and syn.protect_gui then
                 syn.protect_gui(OpenUI)
@@ -350,33 +372,58 @@ task.spawn(function()
             else
                 OpenUI.Parent = game:GetService("CoreGui")
             end
-            
-            OpenUI.Name = "OpenUI"
+
+            OpenUI.Name = "MobileUIButton"
             OpenUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-            
+            OpenUI.ResetOnSpawn = false
+
             ImageButton.Parent = OpenUI
-            ImageButton.BackgroundColor3 = Color3.fromRGB(105,105,105)
+            ImageButton.BackgroundColor3 = Color3.fromRGB(105, 105, 105)
             ImageButton.BackgroundTransparency = 0.8
-            ImageButton.Position = UDim2.new(0.9,0,0.1,0)
-            ImageButton.Size = UDim2.new(0,50,0,50)
-            ImageButton.Image = "rbxassetid://13099788281" -- Logo HT Hub
+            ImageButton.Position = UDim2.new(0.9, 0, 0.1, 0)
+            ImageButton.Size = UDim2.new(0, 50, 0, 50)
+            ImageButton.Image = "rbxassetid://13099788281" -- Có thể thay đổi logo
             ImageButton.Draggable = true
             ImageButton.Transparency = 0.2
-            
-            UICorner.CornerRadius = UDim.new(0,200)
+
+            UICorner.CornerRadius = UDim.new(0, 200)
             UICorner.Parent = ImageButton
-            
-            -- Khi click vào logo sẽ mở lại UI
+
+            -- Hiệu ứng hover
+            ImageButton.MouseEnter:Connect(function()
+                game:GetService("TweenService"):Create(ImageButton, TweenInfo.new(0.2), {
+                    BackgroundTransparency = 0.5,
+                    Transparency = 0
+                }):Play()
+            end)
+
+            ImageButton.MouseLeave:Connect(function()
+                game:GetService("TweenService"):Create(ImageButton, TweenInfo.new(0.2), {
+                    BackgroundTransparency = 0.8,
+                    Transparency = 0.2
+                }):Play()
+            end)
+
+            -- Khi click vào icon sẽ giả lập nút Left Alt
             ImageButton.MouseButton1Click:Connect(function()
-                game:GetService("VirtualInputManager"):SendKeyEvent(true,Enum.KeyCode.LeftControl,false,game)
+                game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.LeftAlt, false, game)
+                wait(0.1)
+                game:GetService("VirtualInputManager"):SendKeyEvent(false, Enum.KeyCode.LeftAlt, false, game)
             end)
         end
     end)
-    
+
     if not success then
-        warn("Lỗi khi tạo nút Logo UI: " .. tostring(errorMsg))
+        warn("Lỗi khi tạo nút Mobile UI: " .. tostring(errorMsg))
     end
 end)
 
-print("HT Hub Fish It Script đã tải thành công!")
-print("Sử dụng Left Ctrl để thu nhỏ/mở rộng UI")
+-- Thông báo khi tải xong
+Window:Notify({
+    Title = "Script Hub",
+    Description = "Script đã tải thành công!\nNhấn Left Alt hoặc icon để ẩn/hiện UI",
+    Duration = 5
+})
+
+print("Script Hub đã tải thành công!")
+print("Sử dụng Left Alt hoặc icon floating để thu nhỏ/mở rộng UI")
