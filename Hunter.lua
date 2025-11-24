@@ -67,7 +67,14 @@ local playerName = Players.LocalPlayer.Name
 
 -- Biến lưu trạng thái Auto Fish
 local autoFishEnabled = ConfigSystem.CurrentConfig.AutoFishEnabled or false
-local savedPosition = ConfigSystem.CurrentConfig.SavedPosition
+local originalSaved = ConfigSystem.CurrentConfig.SavedPosition
+local savedPosition = upgradeSavedPosition(originalSaved)
+if savedPosition and originalSaved ~= savedPosition then
+    ConfigSystem.CurrentConfig.SavedPosition = savedPosition
+    ConfigSystem.SaveConfig()
+else
+    ConfigSystem.CurrentConfig.SavedPosition = savedPosition
+end
 local selectedPositionFile = ConfigSystem.CurrentConfig.SelectedPositionFile
 local autoSellEnabled = ConfigSystem.CurrentConfig.AutoSellEnabled or false
 local autoSellRarity = ConfigSystem.CurrentConfig.AutoSellRarity or "Legend"
@@ -79,9 +86,9 @@ local PositionsFolder = "ScriptHub_Positions"
 pcall(function()
     if makefolder and isfolder and not isfolder(PositionsFolder) then
         makefolder(PositionsFolder)
-        end
-    end)
-    
+    end
+end)
+
 local positionNameInput = ""
 local positionDropdown = nil
 local positionOptions = {}
@@ -103,6 +110,55 @@ end
 
 local function getFileNameFromPath(path)
     return path:match("([^/\\]+)$")
+end
+
+local function serializeCFrameData(cf)
+    local rx, ry, rz = cf:ToOrientation()
+    local pos = cf.Position
+    return {
+        Pos = { pos.X, pos.Y, pos.Z },
+        Ori = { rx, ry, rz }
+    }
+end
+
+local function upgradeSavedPosition(data)
+    if not data then
+        return nil
+    end
+
+    if data.Pos and data.Ori then
+        return {
+            Pos = {
+                tonumber(data.Pos[1]) or 0,
+                tonumber(data.Pos[2]) or 0,
+                tonumber(data.Pos[3]) or 0
+            },
+            Ori = {
+                tonumber(data.Ori[1]) or 0,
+                tonumber(data.Ori[2]) or 0,
+                tonumber(data.Ori[3]) or 0
+            }
+        }
+    elseif data.X and data.Y and data.Z then
+        return {
+            Pos = { tonumber(data.X) or 0, tonumber(data.Y) or 0, tonumber(data.Z) or 0 },
+            Ori = { 0, 0, 0 }
+        }
+    end
+
+    return nil
+end
+
+local function getCFrameFromSaved(data)
+    local upgraded = upgradeSavedPosition(data)
+    if not upgraded then
+        return nil, nil
+    end
+
+    local pos = upgraded.Pos
+    local ori = upgraded.Ori
+    local cf = CFrame.new(pos[1], pos[2], pos[3]) * CFrame.Angles(ori[1], ori[2], ori[3])
+    return upgraded, cf
 end
 
 local function findFirstBasePart(obj)
@@ -161,8 +217,8 @@ local function readPositionFromFile(fileName)
         return HttpService:JSONDecode(readfile(path))
     end)
 
-    if ok and data and data.X and data.Y and data.Z then
-        return { data.X, data.Y, data.Z }
+    if ok and data then
+        return upgradeSavedPosition(data)
     end
 
     return nil
@@ -177,14 +233,8 @@ local function savePositionToFile(fileName, position)
         return false
     end
 
-    local payload = {
-        X = position[1],
-        Y = position[2],
-        Z = position[3]
-    }
-
     return pcall(function()
-        writefile(PositionsFolder .. "/" .. fileName, HttpService:JSONEncode(payload))
+        writefile(PositionsFolder .. "/" .. fileName, HttpService:JSONEncode(position))
     end)
 end
 
@@ -386,7 +436,7 @@ sections.Position:Button({
             return
         end
 
-        local defaultPosition = { 0, 0, 0 }
+        local defaultPosition = serializeCFrameData(CFrame.new(0, 0, 0))
         if savePositionToFile(fileName, defaultPosition) then
             notify("Create Position", "Đã tạo file: " .. fileName, 4)
             refreshDropdownOptions()
@@ -449,8 +499,9 @@ sections.Position:Button({
         local character = player.Character
         if character and character:FindFirstChild("HumanoidRootPart") then
             local hrp = character.HumanoidRootPart
-            local pos = hrp.Position
-            savedPosition = { pos.X, pos.Y, pos.Z }
+            local cf = hrp.CFrame
+            local pos = cf.Position
+            savedPosition = serializeCFrameData(cf)
             ConfigSystem.CurrentConfig.SavedPosition = savedPosition
             ConfigSystem.SaveConfig()
 
@@ -552,8 +603,15 @@ sections.AutoSell:Toggle({
 
 -- Hàm kiểm tra và di chuyển đến tọa độ đã lưu
 local function moveToSavedPosition()
-    if not savedPosition then
+    local upgraded, targetCF = getCFrameFromSaved(savedPosition)
+    if not targetCF then
         return false
+    end
+
+    if upgraded and upgraded ~= savedPosition then
+        savedPosition = upgraded
+        ConfigSystem.CurrentConfig.SavedPosition = upgraded
+        ConfigSystem.SaveConfig()
     end
 
     local player = Players.LocalPlayer
@@ -563,26 +621,23 @@ local function moveToSavedPosition()
     end
 
     local hrp = character.HumanoidRootPart
-    local currentPos = hrp.Position
-    local targetPos = Vector3.new(savedPosition[1], savedPosition[2], savedPosition[3])
-
-    local distance = (currentPos - targetPos).Magnitude
-    if distance > 5 then
-        hrp.CFrame = CFrame.new(targetPos)
-        task.wait(0.5)
-        return true
+    if (hrp.Position - targetCF.Position).Magnitude > 5 then
+        hrp.CFrame = targetCF
+    else
+        hrp.CFrame = targetCF
     end
-
+    task.wait(0.5)
     return true
 end
 
 local function executeAutoFish()
-    if not autoFishEnabled or not selectedPositionFile or not savedPosition then
+    if not autoFishEnabled or not selectedPositionFile then
         return
     end
 
-    moveToSavedPosition()
-    task.wait(0.5)
+    if not moveToSavedPosition() then
+        return
+    end
 
     local ok, autoErr = pcall(function()
         -- Bước 0
@@ -629,7 +684,8 @@ sections.Position:Toggle({
                 return
             end
 
-            if not savedPosition then
+            local _, cf = getCFrameFromSaved(savedPosition)
+            if not cf then
                 notify("Cảnh báo", "File chưa có tọa độ! Vui lòng Save Pos trước.", 5)
             else
                 notify("Auto Fish", "Đã bật Auto Fish", 3)
