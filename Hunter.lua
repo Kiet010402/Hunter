@@ -13,11 +13,13 @@ if not success or not Library then
 end
 
 -- Hệ thống lưu trữ cấu hình
+local HttpService = game:GetService("HttpService")
 local ConfigSystem = {}
 ConfigSystem.FileName = "ScriptConfig_" .. game:GetService("Players").LocalPlayer.Name .. ".json"
 ConfigSystem.DefaultConfig = {
     SavedPosition = nil, -- Lưu tọa độ {X, Y, Z}
-    AutoFishEnabled = false
+    AutoFishEnabled = false,
+    SelectedPositionFile = nil
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -62,6 +64,128 @@ local playerName = game:GetService("Players").LocalPlayer.Name
 -- Biến lưu trạng thái Auto Fish
 local autoFishEnabled = ConfigSystem.CurrentConfig.AutoFishEnabled or false
 local savedPosition = ConfigSystem.CurrentConfig.SavedPosition
+local selectedPositionFile = ConfigSystem.CurrentConfig.SelectedPositionFile
+
+-- Thư mục lưu vị trí
+local PositionsFolder = "ScriptHub_Positions"
+pcall(function()
+    if makefolder and isfolder and not isfolder(PositionsFolder) then
+        makefolder(PositionsFolder)
+    end
+end)
+
+local positionNameInput = ""
+local positionDropdown = nil
+local positionOptions = {}
+
+-- Hàm sanitize tên file
+local function sanitizeFileName(name)
+    name = tostring(name or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    name = name:gsub("[^%w_%-]", "_")
+    if name == "" then
+        return nil
+    end
+    return name
+end
+
+local function getFileNameFromPath(path)
+    return path:match("([^/\\]+)$")
+end
+
+local function getPositionFiles()
+    local files = {}
+
+    if not listfiles then
+        return files
+    end
+
+    local success, list = pcall(function()
+        return listfiles(PositionsFolder)
+    end)
+
+    if success and list then
+        for _, path in ipairs(list) do
+            if path:sub(-4):lower() == ".txt" then
+                local name = getFileNameFromPath(path)
+                table.insert(files, name)
+            end
+        end
+        table.sort(files)
+    end
+
+    return files
+end
+
+local function readPositionFromFile(fileName)
+    if not fileName then
+        return nil
+    end
+    local path = PositionsFolder .. "/" .. fileName
+    if not isfile or not readfile or not isfile(path) then
+        return nil
+    end
+
+    local success, data = pcall(function()
+        return HttpService:JSONDecode(readfile(path))
+    end)
+
+    if success and data and data.X and data.Y and data.Z then
+        return {data.X, data.Y, data.Z}
+    end
+
+    return nil
+end
+
+local function savePositionToFile(fileName, position)
+    if not fileName or not position then
+        return false
+    end
+
+    if not writefile then
+        return false
+    end
+
+    local path = PositionsFolder .. "/" .. fileName
+    local payload = {
+        X = position[1],
+        Y = position[2],
+        Z = position[3]
+    }
+
+    local success = pcall(function()
+        writefile(path, HttpService:JSONEncode(payload))
+    end)
+
+    return success
+end
+
+local function buildDropdownOptions(files)
+    local opts = {}
+    for _, name in ipairs(files) do
+        opts[name] = name
+    end
+    return opts
+end
+
+local function refreshDropdownOptions()
+    local files = getPositionFiles()
+    positionOptions = buildDropdownOptions(files)
+
+    if positionDropdown then
+        if positionDropdown.SetOptions then
+            positionDropdown:SetOptions(positionOptions, selectedPositionFile)
+        elseif positionDropdown.Refresh then
+            positionDropdown:Refresh(positionOptions, selectedPositionFile)
+        end
+    end
+
+    return positionOptions
+end
+
+-- Tải tọa độ từ file đang chọn nếu có
+if selectedPositionFile then
+    savedPosition = readPositionFromFile(selectedPositionFile) or savedPosition
+end
 
 --// Themes
 local Themes = {
@@ -149,12 +273,117 @@ local Main = Window:AddTab({
 --// Section: Auto Farm
 Window:AddSection({ Name = "Auto Farm", Tab = Main })
 
+-- Input Name Position
+Window:AddInput({
+    Title = "Name Position",
+    Description = "Nhập tên file vị trí (không cần .txt)",
+    Tab = Main,
+    Default = "",
+    Callback = function(Text)
+        positionNameInput = Text or ""
+    end,
+})
+
+-- Button Create Position
+Window:AddButton({
+    Title = "Create Position",
+    Description = "Tạo file .txt để lưu tọa độ",
+    Tab = Main,
+    Callback = function()
+        local sanitized = sanitizeFileName(positionNameInput)
+        if not sanitized then
+            Window:Notify({
+                Title = "Lỗi",
+                Description = "Vui lòng nhập tên vị trí hợp lệ!",
+                Duration = 4
+            })
+            return
+        end
+
+        local fileName = sanitized
+        if not fileName:lower():match("%.txt$") then
+            fileName = fileName .. ".txt"
+        end
+
+        local path = PositionsFolder .. "/" .. fileName
+        if isfile and isfile(path) then
+            Window:Notify({
+                Title = "Thông báo",
+                Description = "File này đã tồn tại!",
+                Duration = 4
+            })
+            return
+        end
+
+        local defaultPosition = { 0, 0, 0 }
+        if savePositionToFile(fileName, defaultPosition) then
+            Window:Notify({
+                Title = "Create Position",
+                Description = "Đã tạo file: " .. fileName,
+                Duration = 4
+            })
+            refreshDropdownOptions()
+        else
+            Window:Notify({
+                Title = "Lỗi",
+                Description = "Không thể tạo file! (thiếu quyền?)",
+                Duration = 4
+            })
+        end
+    end,
+})
+
+-- Dropdown Select Position
+positionDropdown = Window:AddDropdown({
+    Title = "Select Position",
+    Description = "Chọn file tọa độ để sử dụng",
+    Tab = Main,
+    Options = refreshDropdownOptions(),
+    Default = selectedPositionFile,
+    Callback = function(value)
+        if not value or value == "" then
+            selectedPositionFile = nil
+            ConfigSystem.CurrentConfig.SelectedPositionFile = nil
+            savedPosition = nil
+            return
+        end
+
+        selectedPositionFile = value
+        ConfigSystem.CurrentConfig.SelectedPositionFile = value
+        ConfigSystem.SaveConfig()
+
+        savedPosition = readPositionFromFile(value)
+        if savedPosition then
+            Window:Notify({
+                Title = "Select Position",
+                Description = "Đang sử dụng file: " .. value,
+                Duration = 4
+            })
+        else
+            Window:Notify({
+                Title = "Thông báo",
+                Description = "File chưa có tọa độ! Hãy Save Pos.",
+                Duration = 4
+            })
+        end
+    end,
+})
+
 -- Button Save Pos
 Window:AddButton({
     Title = "Save Pos",
     Description = "Lưu tọa độ hiện tại",
     Tab = Main,
     Callback = function()
+        if not selectedPositionFile then
+            Window:Notify({
+                Title = "Lỗi",
+                Description = "Chưa chọn file vị trí! Hãy dùng dropdown.",
+                Duration = 4
+            })
+            return
+        end
+
         local player = game:GetService("Players").LocalPlayer
         local character = player.Character
         if character and character:FindFirstChild("HumanoidRootPart") then
@@ -164,11 +393,19 @@ Window:AddButton({
             ConfigSystem.CurrentConfig.SavedPosition = savedPosition
             ConfigSystem.SaveConfig()
 
-            Window:Notify({
-                Title = "Save Pos",
-                Description = string.format("Đã lưu tọa độ: X=%.2f, Y=%.2f, Z=%.2f", pos.X, pos.Y, pos.Z),
-                Duration = 5
-            })
+            if savePositionToFile(selectedPositionFile, savedPosition) then
+                Window:Notify({
+                    Title = "Save Pos",
+                    Description = string.format("Đã lưu tọa độ vào %s\nX=%.2f, Y=%.2f, Z=%.2f", selectedPositionFile, pos.X, pos.Y, pos.Z),
+                    Duration = 5
+                })
+            else
+                Window:Notify({
+                    Title = "Lỗi",
+                    Description = "Không thể ghi file vị trí!",
+                    Duration = 4
+                })
+            end
         else
             Window:Notify({
                 Title = "Lỗi",
@@ -208,7 +445,7 @@ end
 
 -- Hàm thực thi Auto Fish
 local function executeAutoFish()
-    if not autoFishEnabled then
+    if not autoFishEnabled or not selectedPositionFile or not savedPosition then
         return
     end
 
@@ -266,10 +503,19 @@ Window:AddToggle({
         ConfigSystem.SaveConfig()
 
         if Boolean then
+            if not selectedPositionFile then
+                Window:Notify({
+                    Title = "Cảnh báo",
+                    Description = "Chưa chọn file vị trí! Vui lòng tạo/chọn file.",
+                    Duration = 5
+                })
+                return
+            end
+
             if not savedPosition then
                 Window:Notify({
                     Title = "Cảnh báo",
-                    Description = "Chưa lưu tọa độ! Vui lòng Save Pos trước.",
+                    Description = "File chưa có tọa độ! Vui lòng Save Pos trước.",
                     Duration = 5
                 })
             else
