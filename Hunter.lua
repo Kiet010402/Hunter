@@ -15,6 +15,68 @@ if not success or not MacLib then
 end
 
 -- Hệ thống lưu trữ cấu hình
+local function sanitizeFileName(name)
+    name = tostring(name or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    name = name:gsub("[^%w_%-]", "_")
+    if name == "" then
+        return nil
+    end
+    return name
+end
+
+local function getFileNameFromPath(path)
+    return path:match("([^/\\]+)$")
+end
+
+local function serializeCFrameData(cf)
+    local rx, ry, rz = cf:ToOrientation()
+    local pos = cf.Position
+    return {
+        Pos = { pos.X, pos.Y, pos.Z },
+        Ori = { rx, ry, rz }
+    }
+end
+
+local function upgradeSavedPosition(data)
+    if not data then
+        return nil
+    end
+
+    if data.Pos and data.Ori then
+        return {
+            Pos = {
+                tonumber(data.Pos[1]) or 0,
+                tonumber(data.Pos[2]) or 0,
+                tonumber(data.Pos[3]) or 0
+            },
+            Ori = {
+                tonumber(data.Ori[1]) or 0,
+                tonumber(data.Ori[2]) or 0,
+                tonumber(data.Ori[3]) or 0
+            }
+        }
+    elseif data.X and data.Y and data.Z then
+        return {
+            Pos = { tonumber(data.X) or 0, tonumber(data.Y) or 0, tonumber(data.Z) or 0 },
+            Ori = { 0, 0, 0 }
+        }
+    end
+
+    return nil
+end
+
+local function getCFrameFromSaved(data)
+    local upgraded = upgradeSavedPosition(data)
+    if not upgraded then
+        return nil, nil
+    end
+
+    local pos = upgraded.Pos
+    local ori = upgraded.Ori
+    local cf = CFrame.new(pos[1], pos[2], pos[3]) * CFrame.Angles(ori[1], ori[2], ori[3])
+    return upgraded, cf
+end
+
 local ConfigSystem = {}
 ConfigSystem.FileName = "ScriptConfig_" .. Players.LocalPlayer.Name .. ".json"
 ConfigSystem.DefaultConfig = {
@@ -98,68 +160,12 @@ local islandOptions = {}
 local islandParts = {}
 local selectedIsland = nil
 
--- Hàm tiện ích
-local function sanitizeFileName(name)
-    name = tostring(name or ""):gsub("^%s+", ""):gsub("%s+$", "")
-    name = name:gsub("[^%w_%-]", "_")
-    if name == "" then
-        return nil
-    end
-    return name
-end
-
-local function getFileNameFromPath(path)
-    return path:match("([^/\\]+)$")
-end
-
-local function serializeCFrameData(cf)
-    local rx, ry, rz = cf:ToOrientation()
-    local pos = cf.Position
-    return {
-        Pos = { pos.X, pos.Y, pos.Z },
-        Ori = { rx, ry, rz }
-    }
-end
-
-local function upgradeSavedPosition(data)
-    if not data then
-        return nil
-    end
-
-    if data.Pos and data.Ori then
-        return {
-            Pos = {
-                tonumber(data.Pos[1]) or 0,
-                tonumber(data.Pos[2]) or 0,
-                tonumber(data.Pos[3]) or 0
-            },
-            Ori = {
-                tonumber(data.Ori[1]) or 0,
-                tonumber(data.Ori[2]) or 0,
-                tonumber(data.Ori[3]) or 0
-            }
-        }
-    elseif data.X and data.Y and data.Z then
-        return {
-            Pos = { tonumber(data.X) or 0, tonumber(data.Y) or 0, tonumber(data.Z) or 0 },
-            Ori = { 0, 0, 0 }
-        }
-    end
-
-    return nil
-end
-
-local function getCFrameFromSaved(data)
-    local upgraded = upgradeSavedPosition(data)
-    if not upgraded then
-        return nil, nil
-    end
-
-    local pos = upgraded.Pos
-    local ori = upgraded.Ori
-    local cf = CFrame.new(pos[1], pos[2], pos[3]) * CFrame.Angles(ori[1], ori[2], ori[3])
-    return upgraded, cf
-end
+local huntLabel = nil
+local huntDropdown = nil
+local huntOptions = {}
+local huntTargets = {}
+local selectedHunt = nil
+local autoHuntTeleportEnabled = false
 
 local function findFirstBasePart(obj)
     if not obj then
@@ -314,6 +320,106 @@ local function refreshIslandDropdown()
     return list
 end
 
+local function scanHunts()
+    if not huntLabel then
+        return
+    end
+
+    local menuRings = workspace:FindFirstChild("!!! MENU RINGS")
+    if not menuRings then
+        huntLabel:UpdateName("Không tìm thấy !!! MENU RINGS")
+        huntTargets = {}
+        huntOptions = {}
+        if huntDropdown and huntDropdown.ClearOptions then
+            huntDropdown:ClearOptions()
+        end
+        return
+    end
+
+    local propsList = {}
+    local targets = {}
+
+    local function collectProps(container)
+        for _, child in ipairs(container:GetChildren()) do
+            if child:IsA("Model") then
+                local part = findFirstBasePart(child)
+                if part then
+                    table.insert(propsList, child.Name)
+                    targets[child.Name] = part
+                end
+            end
+                end
+            end
+            
+    for _, child in ipairs(menuRings:GetChildren()) do
+        if child.Name == "Props" and (child:IsA("Folder") or child:IsA("Model")) then
+            collectProps(child)
+        end
+    end
+
+    for _, descendant in ipairs(menuRings:GetDescendants()) do
+        if descendant.Name == "Props" and (descendant:IsA("Folder") or descendant:IsA("Model")) then
+            collectProps(descendant)
+        end
+    end
+
+    table.sort(propsList)
+    local uniqueList = {}
+    local seen = {}
+    for _, name in ipairs(propsList) do
+        if not seen[name] then
+            table.insert(uniqueList, name)
+            seen[name] = true
+        end
+    end
+
+    huntTargets = targets
+    huntOptions = uniqueList
+
+    if huntDropdown then
+        if huntDropdown.ClearOptions then
+            huntDropdown:ClearOptions()
+        end
+        if huntDropdown.InsertOptions then
+            huntDropdown:InsertOptions(huntOptions)
+        end
+        if selectedHunt and huntDropdown.UpdateSelection then
+            huntDropdown:UpdateSelection(selectedHunt)
+        end
+    end
+
+    if #uniqueList == 0 then
+        huntLabel:UpdateName("Không tìm thấy Props.")
+    else
+        huntLabel:UpdateName("Danh sách Hunt:\n" .. table.concat(uniqueList, "\n"))
+    end
+end
+
+local function teleportToHunt()
+    if not selectedHunt then
+        return false
+    end
+
+    local target = huntTargets[selectedHunt]
+    if not target or not target.Parent then
+        return false
+    end
+
+    local player = Players.LocalPlayer
+    local character = player.Character
+    if not character then
+        return false
+    end
+
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        return false
+    end
+
+    hrp.CFrame = target.CFrame + Vector3.new(0, 5, 0)
+    return true
+end
+
 local function getDefaultOption(list, target)
     if not list or #list == 0 then
         return nil
@@ -399,6 +505,7 @@ local sections = {
     Position = tabs.Main:Section({ Side = "Left" }),
     AutoSell = tabs.Main:Section({ Side = "Right" }),
     Teleport = tabs.Teleport:Section({ Side = "Left" }),
+    Hunt = tabs.Teleport:Section({ Side = "Right" }),
     SettingsInfo = tabs.Settings:Section({ Side = "Left" })
 }
 
@@ -461,9 +568,9 @@ positionDropdown = sections.Position:Dropdown({
                     chosen = name
                     break
                 end
+                end
             end
-        end
-
+            
         if not chosen or chosen == "" then
             selectedPositionFile = nil
             ConfigSystem.CurrentConfig.SelectedPositionFile = nil
@@ -667,9 +774,9 @@ local function executeAutoFish()
 
     if not ok then
         warn("Lỗi Auto Fish: " .. tostring(autoErr))
-    end
-end
-
+                end
+            end
+            
 sections.Position:Toggle({
     Name = "Auto Fish",
     Default = ConfigSystem.CurrentConfig.AutoFishEnabled or false,
@@ -806,6 +913,67 @@ sections.Teleport:Button({
     end,
 }, "TeleportToIslandButton")
 
+sections.Hunt:Header({ Name = "Hunt Checker" })
+huntLabel = sections.Hunt:Label({
+    Text = "Đang quét hunts..."
+})
+
+huntDropdown = sections.Hunt:Dropdown({
+    Name = "Select Hunt",
+    Multi = false,
+    Required = false,
+    Options = huntOptions,
+    Callback = function(value)
+        if typeof(value) == "table" then
+            for name, state in pairs(value) do
+                if state then
+                    value = name
+                    break
+                end
+            end
+        end
+
+        if value and huntTargets[value] then
+            selectedHunt = value
+            notify("Hunt Checker", "Đã chọn hunt: " .. value, 3)
+        else
+            selectedHunt = nil
+        end
+    end,
+}, "SelectHuntDropdown")
+
+sections.Hunt:Button({
+    Name = "Refresh Hunt List",
+    Callback = function()
+        scanHunts()
+        notify("Hunt Checker", "Đã cập nhật danh sách hunts.", 3)
+    end,
+}, "RefreshHuntButton")
+
+sections.Hunt:Toggle({
+    Name = "Teleport To Hunt",
+    Default = false,
+    Callback = function(value)
+        autoHuntTeleportEnabled = value
+        if value then
+            if not selectedHunt or not huntTargets[selectedHunt] then
+                autoHuntTeleportEnabled = false
+                notify("Hunt Checker", "Chưa chọn hunt hợp lệ!", 4)
+                return
+            end
+            notify("Hunt Checker", "Đã bật teleport tới hunt.", 3)
+        else
+            notify("Hunt Checker", "Đã tắt teleport hunt.", 3)
+        end
+    end,
+}, "TeleportHuntToggle")
+
+task.spawn(function()
+    while task.wait(2) do
+        pcall(scanHunts)
+    end
+end)
+
 tabs.Main:Select()
 
 Window.onUnloaded(function()
@@ -842,6 +1010,14 @@ task.spawn(function()
                 lastAutoSell = os.clock()
                 executeAutoSell()
             end
+        end
+    end
+end)
+
+task.spawn(function()
+    while task.wait(60) do
+        if autoHuntTeleportEnabled then
+            teleportToHunt()
         end
     end
 end)
