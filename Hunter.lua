@@ -26,8 +26,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local PlayerScripts = LocalPlayer:WaitForChild("PlayerScripts")
 
-local function waitForCombatFrameworkChild(childName, timeout)
-    local startTime = tick()
+local function waitForCombatFrameworkChild(childName)
     while true do
         local rsCombat = ReplicatedStorage:FindFirstChild("CombatFramework")
         if rsCombat then
@@ -45,14 +44,11 @@ local function waitForCombatFrameworkChild(childName, timeout)
             end
         end
 
-        if timeout and (tick() - startTime) >= timeout then
-            error("CombatFramework." .. childName .. " not found in ReplicatedStorage or PlayerScripts")
-        end
-        task.wait(0.1)
+        task.wait(0.2)
     end
 end
 
-local RigLibModule = waitForCombatFrameworkChild("RigLib", 10)
+local RigLibModule = waitForCombatFrameworkChild("RigLib")
 local RigLib = require(RigLibModule)
 --main
 local ui_link = "https://raw.githubusercontent.com/ZoiIntra/Dec/main/afsZz.lua"
