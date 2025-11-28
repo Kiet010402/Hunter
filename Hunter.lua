@@ -21,6 +21,39 @@ wait(1)
 repeat
     wait()
 until game.Players.LocalPlayer
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+local PlayerScripts = LocalPlayer:WaitForChild("PlayerScripts")
+
+local function waitForCombatFrameworkChild(childName, timeout)
+    local startTime = tick()
+    while true do
+        local rsCombat = ReplicatedStorage:FindFirstChild("CombatFramework")
+        if rsCombat then
+            local child = rsCombat:FindFirstChild(childName)
+            if child then
+                return child
+            end
+        end
+
+        local psCombat = PlayerScripts:FindFirstChild("CombatFramework")
+        if psCombat then
+            local child = psCombat:FindFirstChild(childName)
+            if child then
+                return child
+            end
+        end
+
+        if timeout and (tick() - startTime) >= timeout then
+            error("CombatFramework." .. childName .. " not found in ReplicatedStorage or PlayerScripts")
+        end
+        task.wait(0.1)
+    end
+end
+
+local RigLibModule = waitForCombatFrameworkChild("RigLib", 10)
+local RigLib = require(RigLibModule)
 --main
 local ui_link = "https://raw.githubusercontent.com/ZoiIntra/Dec/main/afsZz.lua"
 local a = loadstring(game:HttpGet(ui_link))()
@@ -102,7 +135,7 @@ assert(getrawmetatable)
         return old(self, ...)
 end)
 
-getgenv().A = require(game:GetService("ReplicatedStorage").CombatFramework.RigLib).wrapAttackAnimationAsync
+getgenv().A = RigLib.wrapAttackAnimationAsync
 getgenv().B = require(game.Players.LocalPlayer.PlayerScripts.CombatFramework.Particle).play
 _G.setfflag = true
 spawn(function()
@@ -3892,7 +3925,7 @@ local PC,
       RL,
       DMG, 
       RigC,
-      Combat = require(LocalPlayer.PlayerScripts.CombatFramework.Particle), require(game:GetService("ReplicatedStorage").CombatFramework.RigLib), require(LocalPlayer.PlayerScripts.CombatFramework.Particle.Damage), getupvalue(require(LocalPlayer.PlayerScripts.CombatFramework.RigController),2), getupvalue(require(LocalPlayer.PlayerScripts.CombatFramework),2)
+      Combat = require(LocalPlayer.PlayerScripts.CombatFramework.Particle), RigLib, require(LocalPlayer.PlayerScripts.CombatFramework.Particle.Damage), getupvalue(require(LocalPlayer.PlayerScripts.CombatFramework.RigController),2), getupvalue(require(LocalPlayer.PlayerScripts.CombatFramework),2)
 
 local UserInputService, RunService, vim, CollectionService, CoreGui = game:GetService("UserInputService")
     ,game:GetService("RunService")
@@ -3970,9 +4003,9 @@ task.spawn(function()
         }
         AttackCD = tick() + (fucker and Cooldown[WeaponName:lower()] or fucker or 0.285) + ((TryLag/MaxLag)*0.3)
         RigEvent.FireServer(RigEvent,"weaponChange",WeaponName)
-        TryLag += 1
+        TryLag = TryLag + 1
         task.delay((fucker or 0.285) + (TryLag+0.5/MaxLag)*0.3,function()
-            TryLag -= 1
+            TryLag = TryLag - 1
         end)
     end
     if not shared.orl then shared.orl = RL.wrapAttackAnimationAsync end
