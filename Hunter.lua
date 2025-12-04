@@ -575,27 +575,19 @@ local function scanEnemyTypes()
     enemyTypes = {}
     local seen = {}
 
-    -- Chỉ dùng ReplicatedStorage.Assets.Mobs để scan tên, Auto Farm Enemy vẫn dùng workspace như cũ
-    local assetsFolder = ReplicatedStorage:FindFirstChild("Assets")
-    if not assetsFolder then
+    -- Dùng trực tiếp workspace.Living để scan enemy (đảm bảo trùng tên với enemy thật trong map)
+    local livingRoot = workspace:FindFirstChild("Living")
+    if not livingRoot then
         return enemyTypes
     end
 
-    local mobsRoot = assetsFolder:FindFirstChild("Mobs")
-    if not mobsRoot then
-        return enemyTypes
-    end
-
-    for _, child in ipairs(mobsRoot:GetDescendants()) do
+    for _, child in ipairs(livingRoot:GetChildren()) do
         if child:IsA("Model") then
-            -- Bỏ qua các model tên chung chung như "Model"
-            if child.Name ~= "Model" then
-                -- Dùng extractEnemyTypeName để loại bỏ số đuôi (nếu có) và khoảng trắng thừa
-                local typeName = extractEnemyTypeName(child.Name)
-                if typeName and typeName ~= "" and not seen[typeName] then
-                    seen[typeName] = true
-                    table.insert(enemyTypes, typeName)
-                end
+            -- Dùng extractEnemyTypeName để loại bỏ số đuôi (nếu có) và khoảng trắng thừa
+            local typeName = extractEnemyTypeName(child.Name)
+            if typeName and typeName ~= "" and not seen[typeName] and child.Name ~= "Model" then
+                seen[typeName] = true
+                table.insert(enemyTypes, typeName)
             end
         end
     end
