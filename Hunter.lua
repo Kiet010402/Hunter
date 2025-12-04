@@ -361,14 +361,84 @@ local function swingPickaxeUntilMinedType(targetPart, typeName)
         :WaitForChild("RF")
         :WaitForChild("ToolActivated")
 
+    local player = Players.LocalPlayer
+    local character = player.Character
+    if not character then
+        return
+    end
+
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        return
+    end
+
+    -- Lưu lại character hiện tại để phát hiện respawn
+    local trackedCharacter = character
+
+    -- Tắt xoay tự do để hạn chế game tự chỉnh hướng nhìn
+    local originalAutoRotate = hrp.AssemblyAngularVelocity
+    hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+
+    -- Giữ nhân vật cố định dưới viên đá (không rơi)
+    local bodyVelocity = hrp:FindFirstChild("BodyVelocity")
+    if not bodyVelocity then
+        bodyVelocity = Instance.new("BodyVelocity")
+        bodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
+        bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        bodyVelocity.Parent = hrp
+    end
+
+    -- Khóa vị trí + hướng nhìn (giống Enemy, nhưng ở dưới nhìn lên)
+    local keepPositionConnection
+    keepPositionConnection = RunService.Heartbeat:Connect(function()
+        if not autoMineEnabled
+            or not model
+            or not model.Parent
+            or Players.LocalPlayer.Character ~= trackedCharacter
+            or not hrp
+            or not hrp.Parent then
+            if keepPositionConnection then
+                keepPositionConnection:Disconnect()
+            end
+            return
+        end
+
+        local rockPart = targetPart
+        if rockPart and rockPart.Parent then
+            local downOffset = -(selectedMineDistance or 3)
+            local targetPos = rockPart.Position + Vector3.new(0, downOffset, 0)
+            local lookAtPos = rockPart.Position + Vector3.new(0, 5, 0)
+            hrp.CFrame = CFrame.new(targetPos, lookAtPos)
+            if bodyVelocity then
+                bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+            end
+        end
+    end)
+
     while autoMineEnabled do
+        -- Nếu nhân vật respawn hoặc viên đá bị phá thì dừng
+        if Players.LocalPlayer.Character ~= trackedCharacter or not hrp or not hrp.Parent then
+            break
+        end
         if not model or not model.Parent then
             break
         end
+
         pcall(function()
             toolRF:InvokeServer(unpack(args))
         end)
         task.wait(0.15)
+    end
+
+    -- Dọn dẹp
+    if keepPositionConnection then
+        keepPositionConnection:Disconnect()
+    end
+    if bodyVelocity and bodyVelocity.Parent then
+        bodyVelocity:Destroy()
+    end
+    if hrp and hrp.Parent then
+        hrp.AssemblyAngularVelocity = originalAutoRotate
     end
 end
 
