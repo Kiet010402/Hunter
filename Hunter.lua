@@ -38,6 +38,8 @@ ConfigSystem.DefaultConfig = {
     SelectedMineDistance = 6,
     SelectedPotionName = nil,
     AutoBuyAndUsePotionEnabled = false,
+    SelectedItemName = nil,
+    AutoSellItemEnabled = false,
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -164,8 +166,17 @@ local isAutoBuyAndUseActive = false -- Flag ưu tiên Auto Buy And Use (block Au
 
 --// Sell Item state
 local oreNames = {}
-local selectedItemName = nil
-local autoSellItemEnabled = false
+local selectedItemName = ConfigSystem.CurrentConfig.SelectedItemName
+if type(selectedItemName) == "string" then
+    -- Convert string cũ thành array
+    selectedItemName = { selectedItemName }
+elseif type(selectedItemName) ~= "table" then
+    selectedItemName = {}
+end
+local autoSellItemEnabled = ConfigSystem.CurrentConfig.AutoSellItemEnabled
+if type(autoSellItemEnabled) ~= "boolean" then
+    autoSellItemEnabled = ConfigSystem.DefaultConfig.AutoSellItemEnabled
+end
 local greedyCeyModel = nil -- Lưu reference đến Greedy Cey model
 local hasOpenedDialogue = false -- Flag để chỉ mở dialogue 1 lần duy nhất
 
@@ -1485,31 +1496,52 @@ end
 -- Scan và tạo dropdown
 oreNames = scanOres()
 
+-- Format selectedItemName để hiển thị trong dropdown (thêm số lượng nếu có)
+local function getSelectedItemNamesForDropdown()
+    local result = {}
+    for _, itemName in ipairs(selectedItemName or {}) do
+        local quantity = getItemQuantity(itemName)
+        if quantity > 0 then
+            table.insert(result, itemName .. " (" .. tostring(quantity) .. ")")
+        else
+            table.insert(result, itemName)
+        end
+    end
+    return result
+end
+
 local itemDropdown = sections.SellItem:Dropdown({
     Name = "Select Item",
-    Multi = false,
+    Multi = true,
     Required = false,
     Options = getOreOptionsWithQuantity(),
-    Default = selectedItemName,
+    Default = getSelectedItemNamesForDropdown(),
     Callback = function(value)
         if typeof(value) == "table" then
+            selectedItemName = {}
             for name, state in pairs(value) do
                 if state then
-                    value = name
-                    break
+                    -- Extract tên item từ format "Iron (13)" -> "Iron"
+                    local itemName = name:gsub("%s*%(%d+%)", "") -- Loại bỏ " (13)"
+                    table.insert(selectedItemName, itemName)
                 end
             end
+        else
+            selectedItemName = {}
         end
 
-        -- Extract tên item từ format "Iron (13)" -> "Iron"
-        if value and value ~= "" then
-            local itemName = value:gsub("%s*%(%d+%)", "") -- Loại bỏ " (13)"
-            selectedItemName = itemName
-        else
-            selectedItemName = nil
-        end
+        ConfigSystem.CurrentConfig.SelectedItemName = selectedItemName
+        ConfigSystem.SaveConfig()
     end,
 }, "SelectItemDropdown")
+
+-- Đảm bảo hiển thị lại lựa chọn đã lưu khi mở script
+if selectedItemName and #selectedItemName > 0 and itemDropdown and itemDropdown.UpdateSelection then
+    local selectedOptions = getSelectedItemNamesForDropdown()
+    if #selectedOptions > 0 then
+        itemDropdown:UpdateSelection(selectedOptions)
+    end
+end
 
 sections.SellItem:Button({
     Name = "Refresh Item List",
@@ -1524,14 +1556,20 @@ sections.SellItem:Button({
             if itemDropdown.InsertOptions then
                 itemDropdown:InsertOptions(options)
             end
-            if selectedItemName then
-                -- Tìm và update selection với số lượng mới
-                for _, opt in ipairs(options) do
-                    local itemName = opt:gsub("%s*%(%d+%)", "")
-                    if itemName == selectedItemName and itemDropdown.UpdateSelection then
-                        itemDropdown:UpdateSelection(opt)
-                        break
+            if selectedItemName and #selectedItemName > 0 then
+                -- Tìm và update selection với số lượng mới cho tất cả item đã chọn
+                local selectedOptions = {}
+                for _, itemName in ipairs(selectedItemName) do
+                    for _, opt in ipairs(options) do
+                        local optItemName = opt:gsub("%s*%(%d+%)", "")
+                        if optItemName == itemName then
+                            table.insert(selectedOptions, opt)
+                            break
+                        end
                     end
+                end
+                if #selectedOptions > 0 and itemDropdown.UpdateSelection then
+                    itemDropdown:UpdateSelection(selectedOptions)
                 end
             end
         end
@@ -1544,8 +1582,10 @@ sections.SellItem:Toggle({
     Default = autoSellItemEnabled,
     Callback = function(value)
         autoSellItemEnabled = value
+        ConfigSystem.CurrentConfig.AutoSellItemEnabled = value
+        ConfigSystem.SaveConfig()
         if value then
-            if not selectedItemName then
+            if not selectedItemName or #selectedItemName == 0 then
                 notify("Sell Item", "Chưa chọn item!", 3)
             else
                 -- Reset model và flag khi bật lại để tìm lại Greedy Cey và mở dialogue lại
@@ -1582,7 +1622,7 @@ task.spawn(function()
 
     while true do
         task.wait(1) -- Check mỗi 1 giây
-        if autoSellItemEnabled and selectedItemName then
+        if autoSellItemEnabled and selectedItemName and #selectedItemName > 0 then
             -- Bước 1: Chờ Greedy Cey xuất hiện (chỉ 1 lần duy nhất)
             if not greedyCeyModel then
                 local prox = workspace:FindFirstChild("Proximity")
@@ -1609,17 +1649,27 @@ task.spawn(function()
                 task.wait(0.5)
             end
 
-            -- Bước 3: Bán item (chỉ khi đã tìm thấy Greedy Cey và đã mở dialogue)
+            -- Bước 3: Bán tất cả item đã chọn (chỉ khi đã tìm thấy Greedy Cey và đã mở dialogue)
             if greedyCeyModel and hasOpenedDialogue then
-                local quantity = getItemQuantity(selectedItemName)
-                if quantity > 0 then
+                local basket = {}
+                local hasItems = false
+                
+                -- Lấy số lượng của tất cả item đã chọn
+                for _, itemName in ipairs(selectedItemName) do
+                    local quantity = getItemQuantity(itemName)
+                    if quantity > 0 then
+                        basket[itemName] = quantity
+                        hasItems = true
+                    end
+                end
+                
+                -- Bán tất cả item cùng lúc nếu có
+                if hasItems then
                     pcall(function()
                         local args = {
                             "SellConfirm",
                             {
-                                Basket = {
-                                    [selectedItemName] = quantity
-                                }
+                                Basket = basket
                             }
                         }
                         sellRF:InvokeServer(unpack(args))
@@ -1642,14 +1692,20 @@ task.spawn(function()
             if itemDropdown.InsertOptions then
                 itemDropdown:InsertOptions(options)
             end
-            if selectedItemName then
-                -- Tìm và update selection với số lượng mới
-                for _, opt in ipairs(options) do
-                    local itemName = opt:gsub("%s*%(%d+%)", "")
-                    if itemName == selectedItemName and itemDropdown.UpdateSelection then
-                        itemDropdown:UpdateSelection(opt)
-                        break
+            if selectedItemName and #selectedItemName > 0 then
+                -- Tìm và update selection với số lượng mới cho tất cả item đã chọn
+                local selectedOptions = {}
+                for _, itemName in ipairs(selectedItemName) do
+                    for _, opt in ipairs(options) do
+                        local optItemName = opt:gsub("%s*%(%d+%)", "")
+                        if optItemName == itemName then
+                            table.insert(selectedOptions, opt)
+                            break
+                        end
                     end
+                end
+                if #selectedOptions > 0 and itemDropdown.UpdateSelection then
+                    itemDropdown:UpdateSelection(selectedOptions)
                 end
             end
         end
