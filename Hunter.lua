@@ -166,7 +166,7 @@ local isAutoBuyAndUseActive = false -- Flag ưu tiên Auto Buy And Use (block Au
 local oreNames = {}
 local selectedItemName = nil
 local autoSellItemEnabled = false
-local hasWaitedForGreedyCey = false -- Flag để chỉ chờ Greedy Cey 1 lần duy nhất
+local greedyCeyModel = nil -- Lưu reference đến Greedy Cey model
 
 --// Teleport state
 local npcNames = {}
@@ -1547,12 +1547,12 @@ sections.SellItem:Toggle({
             if not selectedItemName then
                 notify("Sell Item", "Chưa chọn item!", 3)
             else
-                -- Reset flag khi bật lại để chờ lại Greedy Cey
-                hasWaitedForGreedyCey = false
+                -- Reset model khi bật lại để tìm lại Greedy Cey
+                greedyCeyModel = nil
             end
         else
-            -- Reset flag khi tắt
-            hasWaitedForGreedyCey = false
+            -- Reset model khi tắt
+            greedyCeyModel = nil
         end
     end,
 }, "AutoSellItemToggle")
@@ -1581,20 +1581,24 @@ task.spawn(function()
         task.wait(1) -- Check mỗi 1 giây
         if autoSellItemEnabled and selectedItemName then
             -- Bước 1: Chờ Greedy Cey xuất hiện (chỉ 1 lần duy nhất)
-            if not hasWaitedForGreedyCey then
+            if not greedyCeyModel then
                 local prox = workspace:FindFirstChild("Proximity")
                 if prox then
                     local greedyCey = prox:FindFirstChild("Greedy Cey")
                     if greedyCey then
-                        hasWaitedForGreedyCey = true
+                        greedyCeyModel = greedyCey
                     end
                 end
             end
 
             -- Bước 2: Mở dialogue với Greedy Cey (chỉ khi đã tìm thấy Greedy Cey)
-            if hasWaitedForGreedyCey then
+            if greedyCeyModel then
                 pcall(function()
-                    local dialogueArgs = { "SellConfirmMisc" }
+                    -- Args phải bao gồm model Greedy Cey làm tham số đầu tiên
+                    local dialogueArgs = {
+                        greedyCeyModel,
+                        "SellConfirmMisc"
+                    }
                     forceDialogueRF:InvokeServer(unpack(dialogueArgs))
                 end)
                 -- Chờ một chút để dialogue mở xong
@@ -1602,7 +1606,7 @@ task.spawn(function()
             end
 
             -- Bước 3: Bán item (chỉ khi đã tìm thấy Greedy Cey)
-            if hasWaitedForGreedyCey then
+            if greedyCeyModel then
                 local quantity = getItemQuantity(selectedItemName)
                 if quantity > 0 then
                     pcall(function()
