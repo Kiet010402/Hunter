@@ -167,6 +167,7 @@ local oreNames = {}
 local selectedItemName = nil
 local autoSellItemEnabled = false
 local greedyCeyModel = nil -- Lưu reference đến Greedy Cey model
+local hasOpenedDialogue = false -- Flag để chỉ mở dialogue 1 lần duy nhất
 
 --// Teleport state
 local npcNames = {}
@@ -1547,12 +1548,14 @@ sections.SellItem:Toggle({
             if not selectedItemName then
                 notify("Sell Item", "Chưa chọn item!", 3)
             else
-                -- Reset model khi bật lại để tìm lại Greedy Cey
+                -- Reset model và flag khi bật lại để tìm lại Greedy Cey và mở dialogue lại
                 greedyCeyModel = nil
+                hasOpenedDialogue = false
             end
         else
-            -- Reset model khi tắt
+            -- Reset model và flag khi tắt
             greedyCeyModel = nil
+            hasOpenedDialogue = false
         end
     end,
 }, "AutoSellItemToggle")
@@ -1591,8 +1594,8 @@ task.spawn(function()
                 end
             end
 
-            -- Bước 2: Mở dialogue với Greedy Cey (chỉ khi đã tìm thấy Greedy Cey)
-            if greedyCeyModel then
+            -- Bước 2: Mở dialogue với Greedy Cey (chỉ 1 lần duy nhất khi đã tìm thấy Greedy Cey)
+            if greedyCeyModel and not hasOpenedDialogue then
                 pcall(function()
                     -- Args phải bao gồm model Greedy Cey làm tham số đầu tiên
                     local dialogueArgs = {
@@ -1601,12 +1604,13 @@ task.spawn(function()
                     }
                     forceDialogueRF:InvokeServer(unpack(dialogueArgs))
                 end)
+                hasOpenedDialogue = true -- Đánh dấu đã mở dialogue
                 -- Chờ một chút để dialogue mở xong
                 task.wait(0.5)
             end
 
-            -- Bước 3: Bán item (chỉ khi đã tìm thấy Greedy Cey)
-            if greedyCeyModel then
+            -- Bước 3: Bán item (chỉ khi đã tìm thấy Greedy Cey và đã mở dialogue)
+            if greedyCeyModel and hasOpenedDialogue then
                 local quantity = getItemQuantity(selectedItemName)
                 if quantity > 0 then
                     pcall(function()
