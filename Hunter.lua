@@ -102,7 +102,7 @@ local tabGroup = Window:TabGroup()
 local tabs = {
     Farm = tabGroup:Tab({ Name = "Farm", Image = "rbxassetid://10734923549" }),
     Settings = tabGroup:Tab({ Name = "Settings", Image = "rbxassetid://10734950309" }),
-    Shop = tabGroup:Tab({ Name = "Shop", Image = "rbxassetid://10734952479" }),
+    Shop = tabGroup:Tab({ Name = "Shop", Image = "rbxassetid://10734952273" }),
 }
 
 --// Mine state
@@ -242,6 +242,35 @@ local function getRockPartsByType(typeName)
     end
 
     return result
+end
+
+local function getClosestRockPartByType(typeName)
+    local player = Players.LocalPlayer
+    local character = player.Character
+    if not character then
+        return nil
+    end
+
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        return nil
+    end
+
+    local parts = getRockPartsByType(typeName)
+    local closestPart = nil
+    local closestDist = math.huge
+
+    for _, part in ipairs(parts) do
+        if part and part.Parent then
+            local dist = (hrp.Position - part.Position).Magnitude
+            if dist < closestDist then
+                closestDist = dist
+                closestPart = part
+            end
+        end
+    end
+
+    return closestPart
 end
 
 -- Lấy viên đá gần nhất trong danh sách nhiều loại đá được chọn
@@ -575,19 +604,27 @@ local function scanEnemyTypes()
     enemyTypes = {}
     local seen = {}
 
-    -- Dùng trực tiếp workspace.Living để scan enemy (đảm bảo trùng tên với enemy thật trong map)
-    local livingRoot = workspace:FindFirstChild("Living")
-    if not livingRoot then
+    -- Chỉ dùng ReplicatedStorage.Assets.Mobs để scan tên, Auto Farm Enemy vẫn dùng workspace như cũ
+    local assetsFolder = ReplicatedStorage:FindFirstChild("Assets")
+    if not assetsFolder then
         return enemyTypes
     end
 
-    for _, child in ipairs(livingRoot:GetChildren()) do
+    local mobsRoot = assetsFolder:FindFirstChild("Mobs")
+    if not mobsRoot then
+        return enemyTypes
+    end
+
+    for _, child in ipairs(mobsRoot:GetDescendants()) do
         if child:IsA("Model") then
-            -- Dùng extractEnemyTypeName để loại bỏ số đuôi (nếu có) và khoảng trắng thừa
-            local typeName = extractEnemyTypeName(child.Name)
-            if typeName and typeName ~= "" and not seen[typeName] and child.Name ~= "Model" then
-                seen[typeName] = true
-                table.insert(enemyTypes, typeName)
+            -- Bỏ qua các model tên chung chung như "Model"
+            if child.Name ~= "Model" then
+                -- Dùng extractEnemyTypeName để loại bỏ số đuôi (nếu có) và khoảng trắng thừa
+                local typeName = extractEnemyTypeName(child.Name)
+                if typeName and typeName ~= "" and not seen[typeName] then
+                    seen[typeName] = true
+                    table.insert(enemyTypes, typeName)
+                end
             end
         end
     end
@@ -648,6 +685,19 @@ local function getEnemyModelsByType(typeName)
     end
 
     return result
+end
+
+local function isEnemyDead(enemyModel)
+    if not enemyModel or not enemyModel.Parent then
+        return true
+    end
+
+    local statusFolder = enemyModel:FindFirstChild("Status")
+    if statusFolder and statusFolder:FindFirstChild("Dead") then
+        return true
+    end
+
+    return false
 end
 
 local function getClosestEnemyByType(typeName)
@@ -916,7 +966,12 @@ enemyTypeDropdown = sections.Enemy:Dropdown({
 
 -- Đảm bảo hiển thị lại lựa chọn đã lưu khi mở script
 if selectedEnemyType and enemyTypeDropdown and enemyTypeDropdown.UpdateSelection then
-    enemyTypeDropdown:UpdateSelection(selectedEnemyType)
+    for _, name in ipairs(enemyTypes) do
+        if name == selectedEnemyType then
+            enemyTypeDropdown:UpdateSelection(selectedEnemyType)
+            break
+        end
+    end
 end
 
 sections.Enemy:Button({
@@ -978,10 +1033,10 @@ sections.Enemy:Toggle({
         ConfigSystem.SaveConfig()
 
         if value then
-            if not selectedEnemyType or #selectedEnemyType == 0 then
+            if not selectedEnemyType then
                 notify("Enemy", "Chưa chọn loại enemy! Hãy chọn ở dropdown.", 4)
             else
-                notify("Enemy", "Đã bật Auto Farm Enemy cho: " .. table.concat(selectedEnemyType, ", "), 3)
+                notify("Enemy", "Đã bật Auto Farm Enemy cho: " .. tostring(selectedEnemyType), 3)
             end
         else
             notify("Enemy", "Đã tắt Auto Farm Enemy", 3)
