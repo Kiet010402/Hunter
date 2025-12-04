@@ -991,10 +991,10 @@ sections.Enemy:Toggle({
         ConfigSystem.SaveConfig()
 
         if value then
-            if not selectedEnemyType then
+            if not selectedEnemyType or #selectedEnemyType == 0 then
                 notify("Enemy", "Chưa chọn loại enemy! Hãy chọn ở dropdown.", 4)
             else
-                notify("Enemy", "Đã bật Auto Farm Enemy cho: " .. tostring(selectedEnemyType), 3)
+                notify("Enemy", "Đã bật Auto Farm Enemy cho: " .. table.concat(selectedEnemyType, ", "), 3)
             end
         else
             notify("Enemy", "Đã tắt Auto Farm Enemy", 3)
