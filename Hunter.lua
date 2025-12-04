@@ -102,6 +102,7 @@ local tabGroup = Window:TabGroup()
 local tabs = {
     Farm = tabGroup:Tab({ Name = "Farm", Image = "rbxassetid://10734923549" }),
     Shop = tabGroup:Tab({ Name = "Shop", Image = "rbxassetid://10734952273" }),
+    Teleport = tabGroup:Tab({ Name = "Teleport", Image = "rbxassetid://10747381992" }),
     Settings = tabGroup:Tab({ Name = "Settings", Image = "rbxassetid://10734950309" }),
 }
 
@@ -161,11 +162,19 @@ if type(autoBuyAndUsePotionEnabled) ~= "boolean" then
 end
 local isAutoBuyAndUseActive = false -- Flag ưu tiên Auto Buy And Use (block Auto Mine & Auto Farm Enemy)
 
+--// Teleport state
+local npcNames = {}
+local selectedNPCName = nil
+local shopNames = {}
+local selectedShopName = nil
+
 --// Sections
 local sections = {
     Farm = tabs.Farm:Section({ Side = "Left" }),
     Enemy = tabs.Farm:Section({ Side = "Right" }),
     ShopPotion = tabs.Shop:Section({ Side = "Left" }),
+    TeleportNPC = tabs.Teleport:Section({ Side = "Left" }),
+    TeleportShop = tabs.Teleport:Section({ Side = "Right" }),
     SettingsInfo = tabs.Settings:Section({ Side = "Left" }),
     SettingsMisc = tabs.Settings:Section({ Side = "Right" }),
 }
@@ -548,11 +557,7 @@ sections.Farm:Toggle({
         if value then
             if not selectedRockType or #selectedRockType == 0 then
                 notify("Mine", "Chưa chọn loại đá! Hãy chọn ở dropdown.", 4)
-            else
-                notify("Mine", "Đã bật Auto Mine cho: " .. table.concat(selectedRockType, ", "), 3)
             end
-        else
-            notify("Mine", "Đã tắt Auto Mine", 3)
         end
     end,
 }, "AutoMineToggle")
@@ -1035,11 +1040,7 @@ sections.Enemy:Toggle({
         if value then
             if not selectedEnemyType then
                 notify("Enemy", "Chưa chọn loại enemy! Hãy chọn ở dropdown.", 4)
-            else
-                notify("Enemy", "Đã bật Auto Farm Enemy cho: " .. tostring(selectedEnemyType), 3)
             end
-        else
-            notify("Enemy", "Đã tắt Auto Farm Enemy", 3)
         end
     end,
 }, "AutoFarmEnemyToggle")
@@ -1235,11 +1236,7 @@ sections.ShopPotion:Toggle({
         if value then
             if not selectedPotionName then
                 notify("Shop Potion", "Chưa chọn potion!", 3)
-            else
-                notify("Shop Potion", "Đã bật Auto Buy And Use: " .. selectedPotionName, 3)
             end
-        else
-            notify("Shop Potion", "Đã tắt Auto Buy And Use", 3)
         end
     end,
 }, "AutoBuyAndUsePotionToggle")
@@ -1371,6 +1368,218 @@ task.spawn(function()
         end
     end
 end)
+
+--// TELEPORT TAB
+sections.TeleportNPC:Header({ Name = "Tween To NPC" })
+
+-- Hàm scan NPC từ workspace.Proximity (loại bỏ Potion)
+local function scanNPCs()
+    npcNames = {}
+    local proxFolder = workspace:FindFirstChild("Proximity")
+    if not proxFolder then
+        return npcNames
+    end
+
+    for _, child in ipairs(proxFolder:GetChildren()) do
+        if child:IsA("Model") and child.Name ~= "Potion" then
+            table.insert(npcNames, child.Name)
+        end
+    end
+
+    table.sort(npcNames)
+    return npcNames
+end
+
+-- Hàm scan Shop từ workspace.Shops
+local function scanShops()
+    shopNames = {}
+    local shopsFolder = workspace:FindFirstChild("Shops")
+    if not shopsFolder then
+        return shopNames
+    end
+
+    for _, child in ipairs(shopsFolder:GetChildren()) do
+        if child:IsA("Model") then
+            table.insert(shopNames, child.Name)
+        end
+    end
+
+    table.sort(shopNames)
+    return shopNames
+end
+
+-- Hàm tween tới NPC/Shop với tốc độ chậm
+local function tweenToTarget(targetName, isNPC)
+    local player = Players.LocalPlayer
+    local character = player.Character
+    if not character then
+        notify("Teleport", "Không tìm thấy nhân vật!", 3)
+        return false
+    end
+
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        notify("Teleport", "Không tìm thấy HumanoidRootPart!", 3)
+        return false
+    end
+
+    local folder = isNPC and workspace:FindFirstChild("Proximity") or workspace:FindFirstChild("Shops")
+    if not folder then
+        notify("Teleport", "Không tìm thấy folder!", 3)
+        return false
+    end
+
+    local targetModel = folder:FindFirstChild(targetName)
+    if not targetModel then
+        notify("Teleport", "Không tìm thấy " .. targetName .. "!", 3)
+        return false
+    end
+
+    local targetPart = targetModel:FindFirstChild("HumanoidRootPart") or targetModel.PrimaryPart or
+        targetModel:FindFirstChildWhichIsA("BasePart", true)
+    if not targetPart then
+        notify("Teleport", "Không tìm thấy phần tử của " .. targetName .. "!", 3)
+        return false
+    end
+
+    local targetPos = targetPart.Position + Vector3.new(0, 3, 0)
+    local distance = (hrp.Position - targetPos).Magnitude
+    -- Tween chậm: tốc độ 8 studs/s, tối thiểu 1.5s, tối đa 15s
+    local time = math.clamp(distance / 8, 1.5, 15)
+
+    local lookAtCFrame = CFrame.new(targetPos, targetPart.Position)
+
+    local tween = TweenService:Create(
+        hrp,
+        TweenInfo.new(time, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
+        { CFrame = lookAtCFrame }
+    )
+
+    tween:Play()
+    tween.Completed:Wait()
+
+    notify("Teleport", "Đã tween tới " .. targetName, 3)
+    return true
+end
+
+-- Scan và tạo dropdown NPC
+npcNames = scanNPCs()
+
+local npcDropdown = sections.TeleportNPC:Dropdown({
+    Name = "Select NPC",
+    Multi = false,
+    Required = false,
+    Options = npcNames,
+    Default = selectedNPCName,
+    Callback = function(value)
+        if typeof(value) == "table" then
+            for name, state in pairs(value) do
+                if state then
+                    value = name
+                    break
+                end
+            end
+        end
+
+        if not value or value == "" then
+            selectedNPCName = nil
+        else
+            selectedNPCName = value
+        end
+    end,
+}, "SelectNPCDropdown")
+
+sections.TeleportNPC:Button({
+    Name = "Refresh NPC List",
+    Callback = function()
+        local list = scanNPCs()
+        npcNames = list
+        if npcDropdown then
+            if npcDropdown.ClearOptions then
+                npcDropdown:ClearOptions()
+            end
+            if npcDropdown.InsertOptions then
+                npcDropdown:InsertOptions(list)
+            end
+            if selectedNPCName and npcDropdown.UpdateSelection then
+                npcDropdown:UpdateSelection(selectedNPCName)
+            end
+        end
+        notify("Teleport", "Đã cập nhật danh sách NPC.", 3)
+    end,
+}, "RefreshNPCListButton")
+
+sections.TeleportNPC:Button({
+    Name = "Tween To NPC",
+    Callback = function()
+        if not selectedNPCName then
+            notify("Teleport", "Chưa chọn NPC!", 3)
+        else
+            tweenToTarget(selectedNPCName, true)
+        end
+    end,
+}, "TweenToNPCButton")
+
+-- Tween To Shop section
+sections.TeleportShop:Header({ Name = "Tween To Shop" })
+
+-- Scan và tạo dropdown Shop
+shopNames = scanShops()
+
+local shopDropdown = sections.TeleportShop:Dropdown({
+    Name = "Select Shop",
+    Multi = false,
+    Required = false,
+    Options = shopNames,
+    Default = selectedShopName,
+    Callback = function(value)
+        if typeof(value) == "table" then
+            for name, state in pairs(value) do
+                if state then
+                    value = name
+                    break
+                end
+            end
+        end
+
+        if not value or value == "" then
+            selectedShopName = nil
+        else
+            selectedShopName = value
+        end
+    end,
+}, "SelectShopDropdown")
+
+sections.TeleportShop:Button({
+    Name = "Refresh Shop List",
+    Callback = function()
+        local list = scanShops()
+        shopNames = list
+        if shopDropdown then
+            if shopDropdown.ClearOptions then
+                shopDropdown:ClearOptions()
+            end
+            if shopDropdown.InsertOptions then
+                shopDropdown:InsertOptions(list)
+            end
+            if selectedShopName and shopDropdown.UpdateSelection then
+                shopDropdown:UpdateSelection(selectedShopName)
+            end
+        end
+        notify("Teleport", "Đã cập nhật danh sách Shop.", 3)
+    end,
+}, "RefreshShopListButton")
+
+sections.TeleportShop:Button({
+    Name = "Tween To Shop",
+    Callback = function()
+        if not selectedShopName then
+            notify("Teleport", "Chưa chọn Shop!", 3)
+        else
+            tweenToTarget(selectedShopName, false)
+        end
+    end,
+}, "TweenToShopButton")
 
 -- Tab Settings: thông tin cơ bản
 sections.SettingsInfo:Header({ Name = "Thông tin Script" })
