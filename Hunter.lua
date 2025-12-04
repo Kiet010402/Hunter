@@ -101,8 +101,8 @@ MacLib:SetFolder("HTHubTheForge")
 local tabGroup = Window:TabGroup()
 local tabs = {
     Farm = tabGroup:Tab({ Name = "Farm", Image = "rbxassetid://10734923549" }),
-    Shop = tabGroup:Tab({ Name = "Shop", Image = "rbxassetid://10734952479" }),
     Settings = tabGroup:Tab({ Name = "Settings", Image = "rbxassetid://10734950309" }),
+    Shop = tabGroup:Tab({ Name = "Shop", Image = "rbxassetid://10734952479" }),
 }
 
 --// Mine state
