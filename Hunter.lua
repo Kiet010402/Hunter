@@ -1372,7 +1372,7 @@ end)
 --// TELEPORT TAB
 sections.TeleportNPC:Header({ Name = "Tween To NPC" })
 
--- Hàm scan NPC từ workspace.Proximity (loại bỏ Potion)
+-- Hàm scan NPC từ workspace.Proximity (loại bỏ tất cả Potion)
 local function scanNPCs()
     npcNames = {}
     local proxFolder = workspace:FindFirstChild("Proximity")
@@ -1381,8 +1381,12 @@ local function scanNPCs()
     end
 
     for _, child in ipairs(proxFolder:GetChildren()) do
-        if child:IsA("Model") and child.Name ~= "Potion" then
-            table.insert(npcNames, child.Name)
+        if child:IsA("Model") then
+            local nameLower = child.Name:lower()
+            -- Loại bỏ tất cả model có tên chứa "potion" (case-insensitive)
+            if not nameLower:find("potion") then
+                table.insert(npcNames, child.Name)
+            end
         end
     end
 
@@ -1447,7 +1451,11 @@ local function tweenToTarget(targetName, isNPC)
     -- Tween chậm: tốc độ 8 studs/s, tối thiểu 1.5s, tối đa 15s
     local time = math.clamp(distance / 8, 1.5, 15)
 
-    local lookAtCFrame = CFrame.new(targetPos, targetPart.Position)
+    -- Đảm bảo người chơi đứng thẳng: chỉ xoay theo trục Y (horizontal), không úp mặt xuống
+    local direction = (targetPart.Position - targetPos)
+    direction = Vector3.new(direction.X, 0, direction.Z) -- Chỉ lấy hướng ngang, bỏ trục Y
+    local lookAtPos = targetPos + direction.Unit * 5 -- Điểm nhìn phía trước, cùng độ cao
+    local lookAtCFrame = CFrame.new(targetPos, lookAtPos)
 
     local tween = TweenService:Create(
         hrp,
