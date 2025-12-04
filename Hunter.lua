@@ -101,8 +101,8 @@ MacLib:SetFolder("HTHubTheForge")
 local tabGroup = Window:TabGroup()
 local tabs = {
     Farm = tabGroup:Tab({ Name = "Farm", Image = "rbxassetid://10734923549" }),
+    Shop = tabGroup:Tab({ Name = "Shop", Image = "rbxassetid://10734952479" }),
     Settings = tabGroup:Tab({ Name = "Settings", Image = "rbxassetid://10734950309" }),
-    Shop = tabGroup:Tab({ Name = "Shop", Image = "rbxassetid://10734952273" }),
 }
 
 --// Mine state
@@ -242,35 +242,6 @@ local function getRockPartsByType(typeName)
     end
 
     return result
-end
-
-local function getClosestRockPartByType(typeName)
-    local player = Players.LocalPlayer
-    local character = player.Character
-    if not character then
-        return nil
-    end
-
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    if not hrp then
-        return nil
-    end
-
-    local parts = getRockPartsByType(typeName)
-    local closestPart = nil
-    local closestDist = math.huge
-
-    for _, part in ipairs(parts) do
-        if part and part.Parent then
-            local dist = (hrp.Position - part.Position).Magnitude
-            if dist < closestDist then
-                closestDist = dist
-                closestPart = part
-            end
-        end
-    end
-
-    return closestPart
 end
 
 -- Lấy viên đá gần nhất trong danh sách nhiều loại đá được chọn
@@ -685,19 +656,6 @@ local function getEnemyModelsByType(typeName)
     end
 
     return result
-end
-
-local function isEnemyDead(enemyModel)
-    if not enemyModel or not enemyModel.Parent then
-        return true
-    end
-
-    local statusFolder = enemyModel:FindFirstChild("Status")
-    if statusFolder and statusFolder:FindFirstChild("Dead") then
-        return true
-    end
-
-    return false
 end
 
 local function getClosestEnemyByType(typeName)
