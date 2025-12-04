@@ -1,1209 +1,1314 @@
-repeat task.wait() until game:IsLoaded()
-
+--// Services
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
-local VirtualUser = game:GetService("VirtualUser")
-local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui", 15)
+-- RF mua đồ Proximity (Maria shop)
+local ProximityPurchaseRF = ReplicatedStorage
+    :WaitForChild("Shared")
+    :WaitForChild("Packages")
+    :WaitForChild("Knit")
+    :WaitForChild("Services")
+    :WaitForChild("ProximityService")
+    :WaitForChild("RF")
+    :WaitForChild("Purchase")
 
---// Load MacLib UI
-local MacLib
-do
-    local ok, lib = pcall(function()
-        return loadstring(game:HttpGet("https://github.com/biggaboy212/Maclib/releases/latest/download/maclib.txt"))()
+--// Load UI Library (MacLib)
+local MacLib = nil
+local success, err = pcall(function()
+    MacLib = loadstring(game:HttpGet("https://github.com/biggaboy212/Maclib/releases/latest/download/maclib.txt"))()
+end)
+
+if not success or not MacLib then
+    warn("Lỗi khi tải UI Library (MacLib): " .. tostring(err))
+    return
+end
+
+--// Config System (tương tự UI.lua, rút gọn cho TheForge)
+local ConfigSystem = {}
+ConfigSystem.FileName = "TheForgeConfig_" .. Players.LocalPlayer.Name .. ".json"
+ConfigSystem.DefaultConfig = {
+    SelectedRockType = nil,
+    AutoMineEnabled = false,
+    SelectedEnemyType = nil,
+    SelectedDistance = 3,
+    AutoFarmEnemyEnabled = false,
+}
+ConfigSystem.CurrentConfig = {}
+
+ConfigSystem.SaveConfig = function()
+    local ok, saveErr = pcall(function()
+        writefile(ConfigSystem.FileName, HttpService:JSONEncode(ConfigSystem.CurrentConfig))
     end)
-    if ok and lib then
-        MacLib = lib
-    else
-        warn("[Alchemy MacLib] Failed to load MacLib:", lib)
-        return
+    if not ok then
+        warn("Lưu cấu hình thất bại:", saveErr)
     end
 end
 
-MacLib:SetFolder("AlchemyMacHub")
+ConfigSystem.LoadConfig = function()
+    local ok, content = pcall(function()
+        if isfile and isfile(ConfigSystem.FileName) then
+            return readfile(ConfigSystem.FileName)
+        end
+        return nil
+    end)
+
+    if ok and content then
+        local data = HttpService:JSONDecode(content)
+        ConfigSystem.CurrentConfig = data
+    else
+        ConfigSystem.CurrentConfig = table.clone(ConfigSystem.DefaultConfig)
+        ConfigSystem.SaveConfig()
+    end
+end
+
+ConfigSystem.LoadConfig()
+
+--// UI Window
+local playerName = Players.LocalPlayer.Name
 
 local Window = MacLib:Window({
-    Title = "Alchemy Hub | Blox Fruits",
-    Subtitle = "Xin chào, " .. player.Name,
+    Title = "DuongTuan Hub",
+    Subtitle = "Xin chào, " .. playerName,
     Size = UDim2.fromOffset(720, 500),
     DragStyle = 1,
+    DisabledWindowControls = {},
     ShowUserInfo = true,
     Keybind = Enum.KeyCode.LeftAlt,
     AcrylicBlur = true,
 })
 
 local function notify(title, desc, duration)
-    if not Window then
-        warn("[Notify]", title, desc)
-        return
-    end
-
-    Window:Notify({
-        Title = title or Window.Settings.Title,
-        Description = desc or "",
-        Lifetime = duration or 4,
-    })
-end
-
---// World flags
-local World1 = game.PlaceId == 2753915549
-local World2 = game.PlaceId == 4442272183
-local World3 = game.PlaceId == 7449423635
-
---// Quest state (shared with CheckQuest)
-local Mon, LevelQuest, NameQuest, NameMon, CFrameQuest, CFrameMon
-local MyLevel
-
-function CheckQuest() 
-    MyLevel = game:GetService("Players").LocalPlayer.Data.Level.Value
-    if World1 then
-        if MyLevel == 1 or MyLevel <= 9 then
-            Mon = "Bandit"
-            LevelQuest = 1
-            NameQuest = "BanditQuest1"
-            NameMon = "Bandit"
-            CFrameQuest = CFrame.new(1059.37195, 15.4495068, 1550.4231, 0.939700544, -0, -0.341998369, 0, 1, -0, 0.341998369, 0, 0.939700544)
-            CFrameMon = CFrame.new(1045.962646484375, 27.00250816345215, 1560.8203125)
-        elseif MyLevel == 10 or MyLevel <= 14 then
-            Mon = "Monkey"
-            LevelQuest = 1
-            NameQuest = "JungleQuest"
-            NameMon = "Monkey"
-            CFrameQuest = CFrame.new(-1598.08911, 35.5501175, 153.377838, 0, 0, 1, 0, 1, -0, -1, 0, 0)
-            CFrameMon = CFrame.new(-1448.51806640625, 67.85301208496094, 11.46579647064209)
-        elseif MyLevel == 15 or MyLevel <= 29 then
-            Mon = "Gorilla"
-            LevelQuest = 2
-            NameQuest = "JungleQuest"
-            NameMon = "Gorilla"
-            CFrameQuest = CFrame.new(-1598.08911, 35.5501175, 153.377838, 0, 0, 1, 0, 1, -0, -1, 0, 0)
-            CFrameMon = CFrame.new(-1129.8836669921875, 40.46354675292969, -525.4237060546875)
-        elseif MyLevel == 30 or MyLevel <= 39 then
-            Mon = "Pirate"
-            LevelQuest = 1
-            NameQuest = "BuggyQuest1"
-            NameMon = "Pirate"
-            CFrameQuest = CFrame.new(-1141.07483, 4.10001802, 3831.5498, 0.965929627, -0, -0.258804798, 0, 1, -0, 0.258804798, 0, 0.965929627)
-            CFrameMon = CFrame.new(-1103.513427734375, 13.752052307128906, 3896.091064453125)
-        elseif MyLevel == 40 or MyLevel <= 59 then
-            Mon = "Brute"
-            LevelQuest = 2
-            NameQuest = "BuggyQuest1"
-            NameMon = "Brute"
-            CFrameQuest = CFrame.new(-1141.07483, 4.10001802, 3831.5498, 0.965929627, -0, -0.258804798, 0, 1, -0, 0.258804798, 0, 0.965929627)
-            CFrameMon = CFrame.new(-1140.083740234375, 14.809885025024414, 4322.92138671875)
-        elseif MyLevel == 60 or MyLevel <= 74 then
-            Mon = "Desert Bandit"
-            LevelQuest = 1
-            NameQuest = "DesertQuest"
-            NameMon = "Desert Bandit"
-            CFrameQuest = CFrame.new(894.488647, 5.14000702, 4392.43359, 0.819155693, -0, -0.573571265, 0, 1, -0, 0.573571265, 0, 0.819155693)
-            CFrameMon = CFrame.new(924.7998046875, 6.44867467880249, 4481.5859375)
-        elseif MyLevel == 75 or MyLevel <= 89 then
-            Mon = "Desert Officer"
-            LevelQuest = 2
-            NameQuest = "DesertQuest"
-            NameMon = "Desert Officer"
-            CFrameQuest = CFrame.new(894.488647, 5.14000702, 4392.43359, 0.819155693, -0, -0.573571265, 0, 1, -0, 0.573571265, 0, 0.819155693)
-            CFrameMon = CFrame.new(1608.2822265625, 8.614224433898926, 4371.00732421875)
-        elseif MyLevel == 90 or MyLevel <= 99 then
-            Mon = "Snow Bandit"
-            LevelQuest = 1
-            NameQuest = "SnowQuest"
-            NameMon = "Snow Bandit"
-            CFrameQuest = CFrame.new(1389.74451, 88.1519318, -1298.90796, -0.342042685, 0, 0.939684391, 0, 1, 0, -0.939684391, 0, -0.342042685)
-            CFrameMon = CFrame.new(1354.347900390625, 87.27277374267578, -1393.946533203125)
-        elseif MyLevel == 100 or MyLevel <= 119 then
-            Mon = "Snowman"
-            LevelQuest = 2
-            NameQuest = "SnowQuest"
-            NameMon = "Snowman"
-            CFrameQuest = CFrame.new(1389.74451, 88.1519318, -1298.90796, -0.342042685, 0, 0.939684391, 0, 1, 0, -0.939684391, 0, -0.342042685)
-            CFrameMon = CFrame.new(1201.6412353515625, 144.57958984375, -1550.0670166015625)
-        elseif MyLevel == 120 or MyLevel <= 149 then
-            Mon = "Chief Petty Officer"
-            LevelQuest = 1
-            NameQuest = "MarineQuest2"
-            NameMon = "Chief Petty Officer"
-            CFrameQuest = CFrame.new(-5039.58643, 27.3500385, 4324.68018, 0, 0, -1, 0, 1, 0, 1, 0, 0)
-            CFrameMon = CFrame.new(-4881.23095703125, 22.65204429626465, 4273.75244140625)
-        elseif MyLevel == 150 or MyLevel <= 174 then
-            Mon = "Sky Bandit"
-            LevelQuest = 1
-            NameQuest = "SkyQuest"
-            NameMon = "Sky Bandit"
-            CFrameQuest = CFrame.new(-4839.53027, 716.368591, -2619.44165, 0.866007268, 0, 0.500031412, 0, 1, 0, -0.500031412, 0, 0.866007268)
-            CFrameMon = CFrame.new(-4953.20703125, 295.74420166015625, -2899.22900390625)
-        elseif MyLevel == 175 or MyLevel <= 189 then
-            Mon = "Dark Master"
-            LevelQuest = 2
-            NameQuest = "SkyQuest"
-            NameMon = "Dark Master"
-            CFrameQuest = CFrame.new(-4839.53027, 716.368591, -2619.44165, 0.866007268, 0, 0.500031412, 0, 1, 0, -0.500031412, 0, 0.866007268)
-            CFrameMon = CFrame.new(-5259.8447265625, 391.3976745605469, -2229.035400390625)
-        elseif MyLevel == 190 or MyLevel <= 209 then
-            Mon = "Prisoner"
-            LevelQuest = 1
-            NameQuest = "PrisonerQuest"
-            NameMon = "Prisoner"
-            CFrameQuest = CFrame.new(5308.93115, 1.65517521, 475.120514, -0.0894274712, -5.00292918e-09, -0.995993316, 1.60817859e-09, 1, -5.16744869e-09, 0.995993316, -2.06384709e-09, -0.0894274712)
-            CFrameMon = CFrame.new(5098.9736328125, -0.3204058110713959, 474.2373352050781)
-        elseif MyLevel == 210 or MyLevel <= 249 then
-            Mon = "Dangerous Prisoner"
-            LevelQuest = 2
-            NameQuest = "PrisonerQuest"
-            NameMon = "Dangerous Prisoner"
-            CFrameQuest = CFrame.new(5308.93115, 1.65517521, 475.120514, -0.0894274712, -5.00292918e-09, -0.995993316, 1.60817859e-09, 1, -5.16744869e-09, 0.995993316, -2.06384709e-09, -0.0894274712)
-            CFrameMon = CFrame.new(5654.5634765625, 15.633401870727539, 866.2991943359375)
-        elseif MyLevel == 250 or MyLevel <= 274 then
-            Mon = "Toga Warrior"
-            LevelQuest = 1
-            NameQuest = "ColosseumQuest"
-            NameMon = "Toga Warrior"
-            CFrameQuest = CFrame.new(-1580.04663, 6.35000277, -2986.47534, -0.515037298, 0, -0.857167721, 0, 1, 0, 0.857167721, 0, -0.515037298)
-            CFrameMon = CFrame.new(-1820.21484375, 51.68385696411133, -2740.6650390625)
-        elseif MyLevel == 275 or MyLevel <= 299 then
-            Mon = "Gladiator"
-            LevelQuest = 2
-            NameQuest = "ColosseumQuest"
-            NameMon = "Gladiator"
-            CFrameQuest = CFrame.new(-1580.04663, 6.35000277, -2986.47534, -0.515037298, 0, -0.857167721, 0, 1, 0, 0.857167721, 0, -0.515037298)
-            CFrameMon = CFrame.new(-1292.838134765625, 56.380882263183594, -3339.031494140625)
-        elseif MyLevel == 300 or MyLevel <= 324 then
-            Mon = "Military Soldier"
-            LevelQuest = 1
-            NameQuest = "MagmaQuest"
-            NameMon = "Military Soldier"
-            CFrameQuest = CFrame.new(-5313.37012, 10.9500084, 8515.29395, -0.499959469, 0, 0.866048813, 0, 1, 0, -0.866048813, 0, -0.499959469)
-            CFrameMon = CFrame.new(-5411.16455078125, 11.081554412841797, 8454.29296875)
-        elseif MyLevel == 325 or MyLevel <= 374 then
-            Mon = "Military Spy"
-            LevelQuest = 2
-            NameQuest = "MagmaQuest"
-            NameMon = "Military Spy"
-            CFrameQuest = CFrame.new(-5313.37012, 10.9500084, 8515.29395, -0.499959469, 0, 0.866048813, 0, 1, 0, -0.866048813, 0, -0.499959469)
-            CFrameMon = CFrame.new(-5802.8681640625, 86.26241302490234, 8828.859375)
-        elseif MyLevel == 375 or MyLevel <= 399 then
-            Mon = "Fishman Warrior"
-            LevelQuest = 1
-            NameQuest = "FishmanQuest"
-            NameMon = "Fishman Warrior"
-            CFrameQuest = CFrame.new(61122.65234375, 18.497442245483, 1569.3997802734)
-            CFrameMon = CFrame.new(60878.30078125, 18.482830047607422, 1543.7574462890625)
-            if _G.AutoFarm and (CFrameQuest.Position - game.Players.LocalPlayer.Character.HumanoidRootPart.Position).Magnitude > 10000 then
-                game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("requestEntrance",Vector3.new(61163.8515625, 11.6796875, 1819.7841796875))
-            end
-        elseif MyLevel == 400 or MyLevel <= 449 then
-            Mon = "Fishman Commando"
-            LevelQuest = 2
-            NameQuest = "FishmanQuest"
-            NameMon = "Fishman Commando"
-            CFrameQuest = CFrame.new(61122.65234375, 18.497442245483, 1569.3997802734)
-            CFrameMon = CFrame.new(61922.6328125, 18.482830047607422, 1493.934326171875)
-            if _G.AutoFarm and (CFrameQuest.Position - game.Players.LocalPlayer.Character.HumanoidRootPart.Position).Magnitude > 10000 then
-                game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("requestEntrance",Vector3.new(61163.8515625, 11.6796875, 1819.7841796875))
-            end
-        elseif MyLevel == 450 or MyLevel <= 474 then
-            Mon = "God's Guard"
-            LevelQuest = 1
-            NameQuest = "SkyExp1Quest"
-            NameMon = "God's Guard"
-            CFrameQuest = CFrame.new(-4721.88867, 843.874695, -1949.96643, 0.996191859, -0, -0.0871884301, 0, 1, -0, 0.0871884301, 0, 0.996191859)
-            CFrameMon = CFrame.new(-4710.04296875, 845.2769775390625, -1927.3079833984375)
-            if _G.AutoFarm and (CFrameQuest.Position - game.Players.LocalPlayer.Character.HumanoidRootPart.Position).Magnitude > 10000 then
-                game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("requestEntrance",Vector3.new(-4607.82275, 872.54248, -1667.55688))
-            end
-        elseif MyLevel == 475 or MyLevel <= 524 then
-            Mon = "Shanda"
-            LevelQuest = 2
-            NameQuest = "SkyExp1Quest"
-            NameMon = "Shanda"
-            CFrameQuest = CFrame.new(-7859.09814, 5544.19043, -381.476196, -0.422592998, 0, 0.906319618, 0, 1, 0, -0.906319618, 0, -0.422592998)
-            CFrameMon = CFrame.new(-7678.48974609375, 5566.40380859375, -497.2156066894531)
-            if _G.AutoFarm and (CFrameQuest.Position - game.Players.LocalPlayer.Character.HumanoidRootPart.Position).Magnitude > 10000 then
-                game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("requestEntrance",Vector3.new(-7894.6176757813, 5547.1416015625, -380.29119873047))
-            end
-        elseif MyLevel == 525 or MyLevel <= 549 then
-            Mon = "Royal Squad"
-            LevelQuest = 1
-            NameQuest = "SkyExp2Quest"
-            NameMon = "Royal Squad"
-            CFrameQuest = CFrame.new(-7906.81592, 5634.6626, -1411.99194, 0, 0, -1, 0, 1, 0, 1, 0, 0)
-            CFrameMon = CFrame.new(-7624.25244140625, 5658.13330078125, -1467.354248046875)
-        elseif MyLevel == 550 or MyLevel <= 624 then
-            Mon = "Royal Soldier"
-            LevelQuest = 2
-            NameQuest = "SkyExp2Quest"
-            NameMon = "Royal Soldier"
-            CFrameQuest = CFrame.new(-7906.81592, 5634.6626, -1411.99194, 0, 0, -1, 0, 1, 0, 1, 0, 0)
-            CFrameMon = CFrame.new(-7836.75341796875, 5645.6640625, -1790.6236572265625)
-        elseif MyLevel == 625 or MyLevel <= 649 then
-            Mon = "Galley Pirate"
-            LevelQuest = 1
-            NameQuest = "FountainQuest"
-            NameMon = "Galley Pirate"
-            CFrameQuest = CFrame.new(5259.81982, 37.3500175, 4050.0293, 0.087131381, 0, 0.996196866, 0, 1, 0, -0.996196866, 0, 0.087131381)
-            CFrameMon = CFrame.new(5551.02197265625, 78.90135192871094, 3930.412841796875)
-        elseif MyLevel >= 650 then
-            Mon = "Galley Captain"
-            LevelQuest = 2
-            NameQuest = "FountainQuest"
-            NameMon = "Galley Captain"
-            CFrameQuest = CFrame.new(5259.81982, 37.3500175, 4050.0293, 0.087131381, 0, 0.996196866, 0, 1, 0, -0.996196866, 0, 0.087131381)
-            CFrameMon = CFrame.new(5441.95166015625, 42.50205993652344, 4950.09375)
-        end
-    elseif World2 then
-        if MyLevel == 700 or MyLevel <= 724 then
-            Mon = "Raider"
-            LevelQuest = 1
-            NameQuest = "Area1Quest"
-            NameMon = "Raider"
-            CFrameQuest = CFrame.new(-429.543518, 71.7699966, 1836.18188, -0.22495985, 0, -0.974368095, 0, 1, 0, 0.974368095, 0, -0.22495985)
-            CFrameMon = CFrame.new(-728.3267211914062, 52.779319763183594, 2345.7705078125)
-        elseif MyLevel == 725 or MyLevel <= 774 then
-            Mon = "Mercenary"
-            LevelQuest = 2
-            NameQuest = "Area1Quest"
-            NameMon = "Mercenary"
-            CFrameQuest = CFrame.new(-429.543518, 71.7699966, 1836.18188, -0.22495985, 0, -0.974368095, 0, 1, 0, 0.974368095, 0, -0.22495985)
-            CFrameMon = CFrame.new(-1004.3244018554688, 80.15886688232422, 1424.619384765625)
-        elseif MyLevel == 775 or MyLevel <= 799 then
-            Mon = "Swan Pirate"
-            LevelQuest = 1
-            NameQuest = "Area2Quest"
-            NameMon = "Swan Pirate"
-            CFrameQuest = CFrame.new(638.43811, 71.769989, 918.282898, 0.139203906, 0, 0.99026376, 0, 1, 0, -0.99026376, 0, 0.139203906)
-            CFrameMon = CFrame.new(1068.664306640625, 137.61428833007812, 1322.1060791015625)
-        elseif MyLevel == 800 or MyLevel <= 874 then
-            Mon = "Factory Staff"
-            NameQuest = "Area2Quest"
-            LevelQuest = 2
-            NameMon = "Factory Staff"
-            CFrameQuest = CFrame.new(632.698608, 73.1055908, 918.666321, -0.0319722369, 8.96074881e-10, -0.999488771, 1.36326533e-10, 1, 8.92172336e-10, 0.999488771, -1.07732087e-10, -0.0319722369)
-            CFrameMon = CFrame.new(73.07867431640625, 81.86344146728516, -27.470672607421875)
-        elseif MyLevel == 875 or MyLevel <= 899 then
-            Mon = "Marine Lieutenant"
-            LevelQuest = 1
-            NameQuest = "MarineQuest3"
-            NameMon = "Marine Lieutenant"
-            CFrameQuest = CFrame.new(-2440.79639, 71.7140732, -3216.06812, 0.866007268, 0, 0.500031412, 0, 1, 0, -0.500031412, 0, 0.866007268)
-            CFrameMon = CFrame.new(-2821.372314453125, 75.89727783203125, -3070.089111328125)
-        elseif MyLevel == 900 or MyLevel <= 949 then
-            Mon = "Marine Captain"
-            LevelQuest = 2
-            NameQuest = "MarineQuest3"
-            NameMon = "Marine Captain"
-            CFrameQuest = CFrame.new(-2440.79639, 71.7140732, -3216.06812, 0.866007268, 0, 0.500031412, 0, 1, 0, -0.500031412, 0, 0.866007268)
-            CFrameMon = CFrame.new(-1861.2310791015625, 80.17658233642578, -3254.697509765625)
-        elseif MyLevel == 950 or MyLevel <= 974 then
-            Mon = "Zombie"
-            LevelQuest = 1
-            NameQuest = "ZombieQuest"
-            NameMon = "Zombie"
-            CFrameQuest = CFrame.new(-5497.06152, 47.5923004, -795.237061, -0.29242146, 0, -0.95628953, 0, 1, 0, 0.95628953, 0, -0.29242146)
-            CFrameMon = CFrame.new(-5657.77685546875, 78.96973419189453, -928.68701171875)
-        elseif MyLevel == 975 or MyLevel <= 999 then
-            Mon = "Vampire"
-            LevelQuest = 2
-            NameQuest = "ZombieQuest"
-            NameMon = "Vampire"
-            CFrameQuest = CFrame.new(-5497.06152, 47.5923004, -795.237061, -0.29242146, 0, -0.95628953, 0, 1, 0, 0.95628953, 0, -0.29242146)
-            CFrameMon = CFrame.new(-6037.66796875, 32.18463897705078, -1340.6597900390625)
-        elseif MyLevel == 1000 or MyLevel <= 1049 then
-            Mon = "Snow Trooper"
-            LevelQuest = 1
-            NameQuest = "SnowMountainQuest"
-            NameMon = "Snow Trooper"
-            CFrameQuest = CFrame.new(609.858826, 400.119904, -5372.25928, -0.374604106, 0, 0.92718488, 0, 1, 0, -0.92718488, 0, -0.374604106)
-            CFrameMon = CFrame.new(549.1473388671875, 427.3870544433594, -5563.69873046875)
-        elseif MyLevel == 1050 or MyLevel <= 1099 then
-            Mon = "Winter Warrior"
-            LevelQuest = 2
-            NameQuest = "SnowMountainQuest"
-            NameMon = "Winter Warrior"
-            CFrameQuest = CFrame.new(609.858826, 400.119904, -5372.25928, -0.374604106, 0, 0.92718488, 0, 1, 0, -0.92718488, 0, -0.374604106)
-            CFrameMon = CFrame.new(1142.7451171875, 475.6398010253906, -5199.41650390625)
-        elseif MyLevel == 1100 or MyLevel <= 1124 then
-            Mon = "Lab Subordinate"
-            LevelQuest = 1
-            NameQuest = "IceSideQuest"
-            NameMon = "Lab Subordinate"
-            CFrameQuest = CFrame.new(-6064.06885, 15.2422857, -4902.97852, 0.453972578, -0, -0.891015649, 0, 1, -0, 0.891015649, 0, 0.453972578)
-            CFrameMon = CFrame.new(-5707.4716796875, 15.951709747314453, -4513.39208984375)
-        elseif MyLevel == 1125 or MyLevel <= 1174 then
-            Mon = "Horned Warrior"
-            LevelQuest = 2
-            NameQuest = "IceSideQuest"
-            NameMon = "Horned Warrior"
-            CFrameQuest = CFrame.new(-6064.06885, 15.2422857, -4902.97852, 0.453972578, -0, -0.891015649, 0, 1, -0, 0.891015649, 0, 0.453972578)
-            CFrameMon = CFrame.new(-6341.36669921875, 15.951770782470703, -5723.162109375)
-        elseif MyLevel == 1175 or MyLevel <= 1199 then
-            Mon = "Magma Ninja"
-            LevelQuest = 1
-            NameQuest = "FireSideQuest"
-            NameMon = "Magma Ninja"
-            CFrameQuest = CFrame.new(-5428.03174, 15.0622921, -5299.43457, -0.882952213, 0, 0.469463557, 0, 1, 0, -0.469463557, 0, -0.882952213)
-            CFrameMon = CFrame.new(-5449.6728515625, 76.65874481201172, -5808.20068359375)
-        elseif MyLevel == 1200 or MyLevel <= 1249 then
-            Mon = "Lava Pirate"
-            LevelQuest = 2
-            NameQuest = "FireSideQuest"
-            NameMon = "Lava Pirate"
-            CFrameQuest = CFrame.new(-5428.03174, 15.0622921, -5299.43457, -0.882952213, 0, 0.469463557, 0, 1, 0, -0.469463557, 0, -0.882952213)
-            CFrameMon = CFrame.new(-5213.33154296875, 49.73788070678711, -4701.451171875)
-        elseif MyLevel == 1250 or MyLevel <= 1274 then
-            Mon = "Ship Deckhand"
-            LevelQuest = 1
-            NameQuest = "ShipQuest1"
-            NameMon = "Ship Deckhand"
-            CFrameQuest = CFrame.new(1037.80127, 125.092171, 32911.6016)         
-            CFrameMon = CFrame.new(1212.0111083984375, 150.79205322265625, 33059.24609375)    
-            if _G.AutoFarm and (CFrameQuest.Position - game.Players.LocalPlayer.Character.HumanoidRootPart.Position).Magnitude > 10000 then
-                game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("requestEntrance",Vector3.new(923.21252441406, 126.9760055542, 32852.83203125))
-            end
-        elseif MyLevel == 1275 or MyLevel <= 1299 then
-            Mon = "Ship Engineer"
-            LevelQuest = 2
-            NameQuest = "ShipQuest1"
-            NameMon = "Ship Engineer"
-            CFrameQuest = CFrame.new(1037.80127, 125.092171, 32911.6016)   
-            CFrameMon = CFrame.new(919.4786376953125, 43.54401397705078, 32779.96875)   
-            if _G.AutoFarm and (CFrameQuest.Position - game.Players.LocalPlayer.Character.HumanoidRootPart.Position).Magnitude > 10000 then
-                game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("requestEntrance",Vector3.new(923.21252441406, 126.9760055542, 32852.83203125))
-            end             
-        elseif MyLevel == 1300 or MyLevel <= 1324 then
-            Mon = "Ship Steward"
-            LevelQuest = 1
-            NameQuest = "ShipQuest2"
-            NameMon = "Ship Steward"
-            CFrameQuest = CFrame.new(968.80957, 125.092171, 33244.125)         
-            CFrameMon = CFrame.new(919.4385375976562, 129.55599975585938, 33436.03515625)      
-            if _G.AutoFarm and (CFrameQuest.Position - game.Players.LocalPlayer.Character.HumanoidRootPart.Position).Magnitude > 10000 then
-                game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("requestEntrance",Vector3.new(923.21252441406, 126.9760055542, 32852.83203125))
-            end
-        elseif MyLevel == 1325 or MyLevel <= 1349 then
-            Mon = "Ship Officer"
-            LevelQuest = 2
-            NameQuest = "ShipQuest2"
-            NameMon = "Ship Officer"
-            CFrameQuest = CFrame.new(968.80957, 125.092171, 33244.125)
-            CFrameMon = CFrame.new(1036.0179443359375, 181.4390411376953, 33315.7265625)
-            if _G.AutoFarm and (CFrameQuest.Position - game.Players.LocalPlayer.Character.HumanoidRootPart.Position).Magnitude > 10000 then
-                game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("requestEntrance",Vector3.new(923.21252441406, 126.9760055542, 32852.83203125))
-            end
-        elseif MyLevel == 1350 or MyLevel <= 1374 then
-            Mon = "Arctic Warrior"
-            LevelQuest = 1
-            NameQuest = "FrostQuest"
-            NameMon = "Arctic Warrior"
-            CFrameQuest = CFrame.new(5667.6582, 26.7997818, -6486.08984, -0.933587909, 0, -0.358349502, 0, 1, 0, 0.358349502, 0, -0.933587909)
-            CFrameMon = CFrame.new(5966.24609375, 62.97002029418945, -6179.3828125)
-            if _G.AutoFarm and (CFrameQuest.Position - game.Players.LocalPlayer.Character.HumanoidRootPart.Position).Magnitude > 10000 then
-                game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("requestEntrance",Vector3.new(-6508.5581054688, 5000.034996032715, -132.83953857422))
-            end
-        elseif MyLevel == 1375 or MyLevel <= 1424 then
-            Mon = "Snow Lurker"
-            LevelQuest = 2
-            NameQuest = "FrostQuest"
-            NameMon = "Snow Lurker"
-            CFrameQuest = CFrame.new(5667.6582, 26.7997818, -6486.08984, -0.933587909, 0, -0.358349502, 0, 1, 0, 0.358349502, 0, -0.933587909)
-            CFrameMon = CFrame.new(5407.07373046875, 69.19437408447266, -6880.88037109375)
-        elseif MyLevel == 1425 or MyLevel <= 1449 then
-            Mon = "Sea Soldier"
-            LevelQuest = 1
-            NameQuest = "ForgottenQuest"
-            NameMon = "Sea Soldier"
-            CFrameQuest = CFrame.new(-3054.44458, 235.544281, -10142.8193, 0.990270376, -0, -0.13915664, 0, 1, -0, 0.13915664, 0, 0.990270376)
-            CFrameMon = CFrame.new(-3028.2236328125, 64.67451477050781, -9775.4267578125)
-        elseif MyLevel >= 1450 then
-            Mon = "Water Fighter"
-            LevelQuest = 2
-            NameQuest = "ForgottenQuest"
-            NameMon = "Water Fighter"
-            CFrameQuest = CFrame.new(-3054.44458, 235.544281, -10142.8193, 0.990270376, -0, -0.13915664, 0, 1, -0, 0.13915664, 0, 0.990270376)
-            CFrameMon = CFrame.new(-3352.9013671875, 285.01556396484375, -10534.841796875)
-        end
-    elseif World3 then
-        if MyLevel == 1500 or MyLevel <= 1524 then
-            Mon = "Pirate Millionaire"
-            LevelQuest = 1
-            NameQuest = "PiratePortQuest"
-            NameMon = "Pirate Millionaire"
-            CFrameQuest = CFrame.new(-290.074677, 42.9034653, 5581.58984, 0.965929627, -0, -0.258804798, 0, 1, -0, 0.258804798, 0, 0.965929627)
-            CFrameMon = CFrame.new(-245.9963836669922, 47.30615234375, 5584.1005859375)
-        elseif MyLevel == 1525 or MyLevel <= 1574 then
-            Mon = "Pistol Billionaire"
-            LevelQuest = 2
-            NameQuest = "PiratePortQuest"
-            NameMon = "Pistol Billionaire"
-            CFrameQuest = CFrame.new(-290.074677, 42.9034653, 5581.58984, 0.965929627, -0, -0.258804798, 0, 1, -0, 0.258804798, 0, 0.965929627)
-            CFrameMon = CFrame.new(-187.3301544189453, 86.23987579345703, 6013.513671875)
-        elseif MyLevel == 1575 or MyLevel <= 1599 then
-            Mon = "Dragon Crew Warrior"
-            LevelQuest = 1
-            NameQuest = "AmazonQuest"
-            NameMon = "Dragon Crew Warrior"
-            CFrameQuest = CFrame.new(5832.83594, 51.6806107, -1101.51563, 0.898790359, -0, -0.438378751, 0, 1, -0, 0.438378751, 0, 0.898790359)
-            CFrameMon = CFrame.new(6141.140625, 51.35136413574219, -1340.738525390625)
-        elseif MyLevel == 1600 or MyLevel <= 1624 then 
-            Mon = "Dragon Crew Archer"
-            NameQuest = "AmazonQuest"
-            LevelQuest = 2
-            NameMon = "Dragon Crew Archer"
-            CFrameQuest = CFrame.new(5833.1147460938, 51.60498046875, -1103.0693359375)
-            CFrameMon = CFrame.new(6616.41748046875, 441.7670593261719, 446.0469970703125)
-        elseif MyLevel == 1625 or MyLevel <= 1649 then
-            Mon = "Female Islander"
-            NameQuest = "AmazonQuest2"
-            LevelQuest = 1
-            NameMon = "Female Islander"
-            CFrameQuest = CFrame.new(5446.8793945313, 601.62945556641, 749.45672607422)
-            CFrameMon = CFrame.new(4685.25830078125, 735.8078002929688, 815.3425903320312)
-        elseif MyLevel == 1650 or MyLevel <= 1699 then 
-            Mon = "Giant Islander"
-            NameQuest = "AmazonQuest2"
-            LevelQuest = 2
-            NameMon = "Giant Islander"
-            CFrameQuest = CFrame.new(5446.8793945313, 601.62945556641, 749.45672607422)
-            CFrameMon = CFrame.new(4729.09423828125, 590.436767578125, -36.97627639770508)
-        elseif MyLevel == 1700 or MyLevel <= 1724 then
-            Mon = "Marine Commodore"
-            LevelQuest = 1
-            NameQuest = "MarineTreeIsland"
-            NameMon = "Marine Commodore"
-            CFrameQuest = CFrame.new(2180.54126, 27.8156815, -6741.5498, -0.965929747, 0, 0.258804798, 0, 1, 0, -0.258804798, 0, -0.965929747)
-            CFrameMon = CFrame.new(2286.0078125, 73.13391876220703, -7159.80908203125)
-        elseif MyLevel == 1725 or MyLevel <= 1774 then
-            Mon = "Marine Rear Admiral"
-            NameMon = "Marine Rear Admiral"
-            NameQuest = "MarineTreeIsland"
-            LevelQuest = 2
-            CFrameQuest = CFrame.new(2179.98828125, 28.731239318848, -6740.0551757813)
-            CFrameMon = CFrame.new(3656.773681640625, 160.52406311035156, -7001.5986328125)
-        elseif MyLevel == 1775 or MyLevel <= 1799 then
-            Mon = "Fishman Raider"
-            LevelQuest = 1
-            NameQuest = "DeepForestIsland3"
-            NameMon = "Fishman Raider"
-            CFrameQuest = CFrame.new(-10581.6563, 330.872955, -8761.18652, -0.882952213, 0, 0.469463557, 0, 1, 0, -0.469463557, 0, -0.882952213)   
-            CFrameMon = CFrame.new(-10407.5263671875, 331.76263427734375, -8368.5166015625)
-        elseif MyLevel == 1800 or MyLevel <= 1824 then
-            Mon = "Fishman Captain"
-            LevelQuest = 2
-            NameQuest = "DeepForestIsland3"
-            NameMon = "Fishman Captain"
-            CFrameQuest = CFrame.new(-10581.6563, 330.872955, -8761.18652, -0.882952213, 0, 0.469463557, 0, 1, 0, -0.469463557, 0, -0.882952213)   
-            CFrameMon = CFrame.new(-10994.701171875, 352.38140869140625, -9002.1103515625) 
-        elseif MyLevel == 1825 or MyLevel <= 1849 then
-            Mon = "Forest Pirate"
-            LevelQuest = 1
-            NameQuest = "DeepForestIsland"
-            NameMon = "Forest Pirate"
-            CFrameQuest = CFrame.new(-13234.04, 331.488495, -7625.40137, 0.707134247, -0, -0.707079291, 0, 1, -0, 0.707079291, 0, 0.707134247)
-            CFrameMon = CFrame.new(-13274.478515625, 332.3781433105469, -7769.58056640625)
-        elseif MyLevel == 1850 or MyLevel <= 1899 then
-            Mon = "Mythological Pirate"
-            LevelQuest = 2
-            NameQuest = "DeepForestIsland"
-            NameMon = "Mythological Pirate"
-            CFrameQuest = CFrame.new(-13234.04, 331.488495, -7625.40137, 0.707134247, -0, -0.707079291, 0, 1, -0, 0.707079291, 0, 0.707134247)   
-            CFrameMon = CFrame.new(-13680.607421875, 501.08154296875, -6991.189453125)
-        elseif MyLevel == 1900 or MyLevel <= 1924 then
-            Mon = "Jungle Pirate"
-            LevelQuest = 1
-            NameQuest = "DeepForestIsland2"
-            NameMon = "Jungle Pirate"
-            CFrameQuest = CFrame.new(-12680.3818, 389.971039, -9902.01953, -0.0871315002, 0, 0.996196866, 0, 1, 0, -0.996196866, 0, -0.0871315002)
-            CFrameMon = CFrame.new(-12256.16015625, 331.73828125, -10485.8369140625)
-        elseif MyLevel == 1925 or MyLevel <= 1974 then
-            Mon = "Musketeer Pirate"
-            LevelQuest = 2
-            NameQuest = "DeepForestIsland2"
-            NameMon = "Musketeer Pirate"
-            CFrameQuest = CFrame.new(-12680.3818, 389.971039, -9902.01953, -0.0871315002, 0, 0.996196866, 0, 1, 0, -0.996196866, 0, -0.0871315002)
-            CFrameMon = CFrame.new(-13457.904296875, 391.545654296875, -9859.177734375)
-        elseif MyLevel == 1975 or MyLevel <= 1999 then
-            Mon = "Reborn Skeleton"
-            LevelQuest = 1
-            NameQuest = "HauntedQuest1"
-            NameMon = "Reborn Skeleton"
-            CFrameQuest = CFrame.new(-9479.2168, 141.215088, 5566.09277, 0, 0, 1, 0, 1, -0, -1, 0, 0)
-            CFrameMon = CFrame.new(-8763.7236328125, 165.72299194335938, 6159.86181640625)
-        elseif MyLevel == 2000 or MyLevel <= 2024 then
-            Mon = "Living Zombie"
-            LevelQuest = 2
-            NameQuest = "HauntedQuest1"
-            NameMon = "Living Zombie"
-            CFrameQuest = CFrame.new(-9479.2168, 141.215088, 5566.09277, 0, 0, 1, 0, 1, -0, -1, 0, 0)
-            CFrameMon = CFrame.new(-10144.1318359375, 138.62667846679688, 5838.0888671875)
-        elseif MyLevel == 2025 or MyLevel <= 2049 then
-            Mon = "Demonic Soul"
-            LevelQuest = 1
-            NameQuest = "HauntedQuest2"
-            NameMon = "Demonic Soul"
-            CFrameQuest = CFrame.new(-9516.99316, 172.017181, 6078.46533, 0, 0, -1, 0, 1, 0, 1, 0, 0) 
-            CFrameMon = CFrame.new(-9505.8720703125, 172.10482788085938, 6158.9931640625)
-        elseif MyLevel == 2050 or MyLevel <= 2074 then
-            Mon = "Posessed Mummy"
-            LevelQuest = 2
-            NameQuest = "HauntedQuest2"
-            NameMon = "Posessed Mummy"
-            CFrameQuest = CFrame.new(-9516.99316, 172.017181, 6078.46533, 0, 0, -1, 0, 1, 0, 1, 0, 0)
-            CFrameMon = CFrame.new(-9582.0224609375, 6.251527309417725, 6205.478515625)
-        elseif MyLevel == 2075 or MyLevel <= 2099 then
-            Mon = "Peanut Scout"
-            LevelQuest = 1
-            NameQuest = "NutsIslandQuest"
-            NameMon = "Peanut Scout"
-            CFrameQuest = CFrame.new(-2104.3908691406, 38.104167938232, -10194.21875, 0, 0, -1, 0, 1, 0, 1, 0, 0)
-            CFrameMon = CFrame.new(-2143.241943359375, 47.72198486328125, -10029.9951171875)
-        elseif MyLevel == 2100 or MyLevel <= 2124 then
-            Mon = "Peanut President"
-            LevelQuest = 2
-            NameQuest = "NutsIslandQuest"
-            NameMon = "Peanut President"
-            CFrameQuest = CFrame.new(-2104.3908691406, 38.104167938232, -10194.21875, 0, 0, -1, 0, 1, 0, 1, 0, 0)
-            CFrameMon = CFrame.new(-1859.35400390625, 38.10316848754883, -10422.4296875)
-        elseif MyLevel == 2125 or MyLevel <= 2149 then
-            Mon = "Ice Cream Chef"
-            LevelQuest = 1
-            NameQuest = "IceCreamIslandQuest"
-            NameMon = "Ice Cream Chef"
-            CFrameQuest = CFrame.new(-820.64825439453, 65.819526672363, -10965.795898438, 0, 0, -1, 0, 1, 0, 1, 0, 0)
-            CFrameMon = CFrame.new(-872.24658203125, 65.81957244873047, -10919.95703125)
-        elseif MyLevel == 2150 or MyLevel <= 2199 then
-            Mon = "Ice Cream Commander"
-            LevelQuest = 2
-            NameQuest = "IceCreamIslandQuest"
-            NameMon = "Ice Cream Commander"
-            CFrameQuest = CFrame.new(-820.64825439453, 65.819526672363, -10965.795898438, 0, 0, -1, 0, 1, 0, 1, 0, 0)
-            CFrameMon = CFrame.new(-558.06103515625, 112.04895782470703, -11290.7744140625)
-        elseif MyLevel == 2200 or MyLevel <= 2224 then
-            Mon = "Cookie Crafter"
-            LevelQuest = 1
-            NameQuest = "CakeQuest1"
-            NameMon = "Cookie Crafter"
-            CFrameQuest = CFrame.new(-2021.32007, 37.7982254, -12028.7295, 0.957576931, -8.80302053e-08, 0.288177818, 6.9301187e-08, 1, 7.51931211e-08, -0.288177818, -5.2032135e-08, 0.957576931)
-            CFrameMon = CFrame.new(-2374.13671875, 37.79826354980469, -12125.30859375)
-        elseif MyLevel == 2225 or MyLevel <= 2249 then
-            Mon = "Cake Guard"
-            LevelQuest = 2
-            NameQuest = "CakeQuest1"
-            NameMon = "Cake Guard"
-            CFrameQuest = CFrame.new(-2021.32007, 37.7982254, -12028.7295, 0.957576931, -8.80302053e-08, 0.288177818, 6.9301187e-08, 1, 7.51931211e-08, -0.288177818, -5.2032135e-08, 0.957576931)
-            CFrameMon = CFrame.new(-1598.3070068359375, 43.773197174072266, -12244.5810546875)
-        elseif MyLevel == 2250 or MyLevel <= 2274 then
-            Mon = "Baking Staff"
-            LevelQuest = 1
-            NameQuest = "CakeQuest2"
-            NameMon = "Baking Staff"
-            CFrameQuest = CFrame.new(-1927.91602, 37.7981339, -12842.5391, -0.96804446, 4.22142143e-08, 0.250778586, 4.74911062e-08, 1, 1.49904711e-08, -0.250778586, 2.64211941e-08, -0.96804446)
-            CFrameMon = CFrame.new(-1887.8099365234375, 77.6185073852539, -12998.3505859375)
-        elseif MyLevel == 2275 or MyLevel <= 2299 then
-            Mon = "Head Baker"
-            LevelQuest = 2
-            NameQuest = "CakeQuest2"
-            NameMon = "Head Baker"
-            CFrameQuest = CFrame.new(-1927.91602, 37.7981339, -12842.5391, -0.96804446, 4.22142143e-08, 0.250778586, 4.74911062e-08, 1, 1.49904711e-08, -0.250778586, 2.64211941e-08, -0.96804446)
-            CFrameMon = CFrame.new(-2216.188232421875, 82.884521484375, -12869.2939453125)
-        elseif MyLevel == 2300 or MyLevel <= 2324 then
-            Mon = "Cocoa Warrior"
-            LevelQuest = 1
-            NameQuest = "ChocQuest1"
-            NameMon = "Cocoa Warrior"
-            CFrameQuest = CFrame.new(233.22836303710938, 29.876001358032227, -12201.2333984375)
-            CFrameMon = CFrame.new(-21.55328369140625, 80.57499694824219, -12352.3876953125)
-        elseif MyLevel == 2325 or MyLevel <= 2349 then
-            Mon = "Chocolate Bar Battler"
-            LevelQuest = 2
-            NameQuest = "ChocQuest1"
-            NameMon = "Chocolate Bar Battler"
-            CFrameQuest = CFrame.new(233.22836303710938, 29.876001358032227, -12201.2333984375)
-            CFrameMon = CFrame.new(582.590576171875, 77.18809509277344, -12463.162109375)
-        elseif MyLevel == 2350 or MyLevel <= 2374 then
-            Mon = "Sweet Thief"
-            LevelQuest = 1
-            NameQuest = "ChocQuest2"
-            NameMon = "Sweet Thief"
-            CFrameQuest = CFrame.new(150.5066375732422, 30.693693161010742, -12774.5029296875)
-            CFrameMon = CFrame.new(165.1884765625, 76.05885314941406, -12600.8369140625)
-        elseif MyLevel == 2375 or MyLevel <= 2399 then
-            Mon = "Candy Rebel"
-            LevelQuest = 2
-            NameQuest = "ChocQuest2"
-            NameMon = "Candy Rebel"
-            CFrameQuest = CFrame.new(150.5066375732422, 30.693693161010742, -12774.5029296875)
-            CFrameMon = CFrame.new(134.86563110351562, 77.2476806640625, -12876.5478515625)
-        elseif MyLevel == 2400 or MyLevel <= 2424 then
-            Mon = "Candy Pirate"
-            LevelQuest = 1
-            NameQuest = "CandyQuest1"
-            NameMon = "Candy Pirate"
-            CFrameQuest = CFrame.new(-1150.0400390625, 20.378934860229492, -14446.3349609375)
-            CFrameMon = CFrame.new(-1310.5003662109375, 26.016523361206055, -14562.404296875)
-        elseif MyLevel == 2425 or MyLevel <= 2449 then
-            Mon = "Snow Demon"
-            LevelQuest = 2
-            NameQuest = "CandyQuest1"
-            NameMon = "Snow Demon"
-            CFrameQuest = CFrame.new(-1150.0400390625, 20.378934860229492, -14446.3349609375)
-            CFrameMon = CFrame.new(-880.2006225585938, 71.24776458740234, -14538.609375)
-        elseif MyLevel == 2450 or MyLevel <= 2474 then
-            Mon = "Isle Outlaw"
-            LevelQuest = 1
-            NameQuest = "TikiQuest1"
-            NameMon = "Isle Outlaw"
-            CFrameQuest = CFrame.new(-16547.748046875, 61.13533401489258, -173.41360473632812)
-            CFrameMon = CFrame.new(-16442.814453125, 116.13899993896484, -264.4637756347656)
-        elseif MyLevel == 2475 or MyLevel <= 2499 then
-            Mon = "Island Boy"
-            LevelQuest = 2
-            NameQuest = "TikiQuest1"
-            NameMon = "Island Boy"
-            CFrameQuest = CFrame.new(-16547.748046875, 61.13533401489258, -173.41360473632812)
-            CFrameMon = CFrame.new(-16901.26171875, 84.06756591796875, -192.88906860351562)
-        elseif MyLevel == 2500 or MyLevel <= 2524 then
-            Mon = "Sun-kissed Warrior"
-            LevelQuest = 1
-            NameQuest = "TikiQuest2"
-            NameMon = "kissed"
-            CFrameQuest = CFrame.new(-16539.078125, 55.68632888793945, 1051.5738525390625)
-            CFrameMon = CFrame.new(-16349.8779296875, 92.0808334350586, 1123.4169921875)
-        elseif MyLevel == 2525 or MyLevel <= 2550 then
-            Mon = "Isle Champion"
-            LevelQuest = 2
-            NameQuest = "TikiQuest2"
-            NameMon = "Isle Champion"
-            CFrameQuest = CFrame.new(-16539.078125, 55.68632888793945, 1051.5738525390625)
-            CFrameMon = CFrame.new(-16347.4150390625, 92.09503936767578, 1122.335205078125)
-        end
+    if Window and Window.Notify then
+        Window:Notify({
+            Title = title or Window.Settings.Title,
+            Description = desc or "",
+            Lifetime = duration or 4
+        })
+    else
+        print("[Notify]", tostring(title), tostring(desc))
     end
 end
 
---// Helper utilities
-local function getHRP()
-    local character = player.Character
-    if not character then
-        return nil
-    end
-    return character:FindFirstChild("HumanoidRootPart")
-end
+MacLib:SetFolder("DuongTuanHub")
 
-local currentTween
-
-local function StopTween(active)
-    if active then
-        return
-    end
-    if currentTween then
-        currentTween:Cancel()
-        currentTween = nil
-    end
-end
-
-local function BTP(targetCFrame)
-    local hrp = getHRP()
-    if not hrp or not targetCFrame then
-        return
-    end
-    hrp.CFrame = targetCFrame
-end
-
-local function ATween(targetCFrame)
-    local hrp = getHRP()
-    if not hrp or not targetCFrame then
-        return
-    end
-    local distance = (hrp.Position - targetCFrame.Position).Magnitude
-    local duration = math.clamp(distance / 250, 0.12, 3)
-    if currentTween then
-        currentTween:Cancel()
-    end
-    local tween = TweenService:Create(hrp, TweenInfo.new(duration, Enum.EasingStyle.Linear), { CFrame = targetCFrame })
-    currentTween = tween
-    tween:Play()
-    task.spawn(function()
-        pcall(function()
-            tween.Completed:Wait()
-        end)
-        if currentTween == tween then
-            currentTween = nil
-        end
-    end)
-end
-
-local function invokeCommF(...)
-    local args = { ... }
-    local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-    if not remotes then
-        return
-    end
-    local comm = remotes:FindFirstChild("CommF_")
-    if not comm then
-        return
-    end
-    local ok, result = pcall(function()
-        return comm:InvokeServer(table.unpack(args))
-    end)
-    if ok then
-        return result
-    end
-end
-
-local state = {
-    weaponCategory = "Melee",
-    weaponName = nil,
-    farmMode = "Quest",
-    attackHeight = 35,
-    autoFarm = false,
-    autoFarmNearest = false,
-    autoSetSpawn = true,
-    autoHaki = true,
-    bypassTP = true,
-    fastAttack = true,
+--// Tabs
+local tabGroup = Window:TabGroup()
+local tabs = {
+    Farm = tabGroup:Tab({ Name = "Farm", Image = "rbxassetid://10734923549" }),
+    Settings = tabGroup:Tab({ Name = "Settings", Image = "rbxassetid://10734950309" }),
+    Shop = tabGroup:Tab({ Name = "Shop", Image = "rbxassetid://10734923549" }),
 }
 
-_G.AutoFarm = false
-
-local function matchesCategory(tool, category)
-    if category == "Melee" then
-        return tool.ToolTip == "Melee"
-    elseif category == "Sword" then
-        return tool.ToolTip == "Sword"
-    elseif category == "Gun" then
-        return tool.ToolTip == "Gun"
-    elseif category == "Fruit" then
-        return tool.ToolTip == "Blox Fruit"
-    end
-    return false
+--// Mine state
+local autoMineEnabled = ConfigSystem.CurrentConfig.AutoMineEnabled
+if type(autoMineEnabled) ~= "boolean" then
+    autoMineEnabled = ConfigSystem.DefaultConfig.AutoMineEnabled
 end
 
-local function updateWeaponSelection()
-    local containers = {}
-    if player.Backpack then
-        table.insert(containers, player.Backpack)
+local selectedRockType = ConfigSystem.CurrentConfig.SelectedRockType
+local rockTypes = {}
+local rockTypeDropdown = nil
+
+--// Enemy state
+local selectedEnemyType = ConfigSystem.CurrentConfig.SelectedEnemyType
+if type(selectedEnemyType) ~= "table" then
+    selectedEnemyType = {}
+end
+local selectedDistance = tonumber(ConfigSystem.CurrentConfig.SelectedDistance) or
+    ConfigSystem.DefaultConfig.SelectedDistance
+-- Giới hạn khoảng cách trong khoảng 1 - 10
+if selectedDistance < 1 or selectedDistance > 10 then
+    selectedDistance = ConfigSystem.DefaultConfig.SelectedDistance
+end
+local autoFarmEnemyEnabled = ConfigSystem.CurrentConfig.AutoFarmEnemyEnabled
+if type(autoFarmEnemyEnabled) ~= "boolean" then
+    autoFarmEnemyEnabled = ConfigSystem.DefaultConfig.AutoFarmEnemyEnabled
+end
+local antiAFKEnabled = ConfigSystem.CurrentConfig.AntiAFKEnabled
+if type(antiAFKEnabled) ~= "boolean" then
+    antiAFKEnabled = false
+end
+local enemyTypes = {}
+local enemyTypeDropdown = nil
+
+--// Shop Potion state
+local potionNames = {}
+local potionDropdown = nil
+local selectedPotionName = nil
+local autoBuyAndUsePotionEnabled = false
+local isAutoBuyAndUseActive = false -- Flag ưu tiên Auto Buy And Use (block Auto Mine & Auto Farm Enemy)
+
+--// Sections
+local sections = {
+    Farm = tabs.Farm:Section({ Side = "Left" }),
+    Enemy = tabs.Farm:Section({ Side = "Right" }),
+    ShopPotion = tabs.Shop:Section({ Side = "Left" }),
+    SettingsInfo = tabs.Settings:Section({ Side = "Left" }),
+    SettingsMisc = tabs.Settings:Section({ Side = "Right" }),
+}
+
+--// FARM TAB
+sections.Farm:Header({ Name = "Mine" })
+
+local function getDefaultOption(list, target)
+    if not list or #list == 0 then
+        return nil
     end
-    if player.Character then
-        table.insert(containers, player.Character)
+    if not target then
+        return list[1]
     end
-    for _, container in ipairs(containers) do
-        for _, tool in ipairs(container:GetChildren()) do
-            if tool:IsA("Tool") and matchesCategory(tool, state.weaponCategory) then
-                state.weaponName = tool.Name
-                return
+    for _, name in ipairs(list) do
+        if name == target then
+            return name
+        end
+    end
+    return list[1]
+end
+
+local function scanRockTypes()
+    rockTypes = {}
+    local seen = {}
+
+    -- Chỉ dùng ReplicatedStorage.Assets.Rocks để scan tên, Auto Mine vẫn dùng workspace như cũ
+    local assetsFolder = ReplicatedStorage:FindFirstChild("Assets")
+    if not assetsFolder then
+        return rockTypes
+    end
+
+    local rocksRoot = assetsFolder:FindFirstChild("Rocks")
+    if not rocksRoot then
+        return rockTypes
+    end
+
+    for _, inst in ipairs(rocksRoot:GetDescendants()) do
+        if inst:IsA("Model") then
+            local name = inst.Name
+            if typeof(name) == "string" and name ~= "" and not name:match("^%d+$") then
+                if not seen[name] then
+                    seen[name] = true
+                    table.insert(rockTypes, name)
+                end
             end
         end
     end
+
+    table.sort(rockTypes)
+
+    return rockTypes
 end
 
-local function AutoHaki()
-    if not state.autoHaki then
-        return
+local function getRockPartsByType(typeName)
+    local result = {}
+
+    if not typeName or typeName == "" then
+        return result
     end
+
+    local rocksRoot = workspace:FindFirstChild("Rocks")
+    if not rocksRoot then
+        return result
+    end
+
+    for _, inst in ipairs(rocksRoot:GetDescendants()) do
+        if inst:IsA("BasePart") then
+            local model = inst:FindFirstAncestorWhichIsA("Model")
+            if model and model.Name == typeName then
+                table.insert(result, inst)
+            end
+        end
+    end
+
+    return result
+end
+
+local function getClosestRockPartByType(typeName)
+    local player = Players.LocalPlayer
     local character = player.Character
     if not character then
-        return
-    end
-    if not character:FindFirstChild("HasBuso") then
-        invokeCommF("Buso")
-    end
-end
-
-local function EquipWeapon(weaponName)
-    if not weaponName then
-        return
-    end
-    local character = player.Character
-    if not character then
-        return
-    end
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    if not humanoid then
-        return
-    end
-    if character:FindFirstChild(weaponName) then
-        return
-    end
-    local backpack = player:FindFirstChild("Backpack")
-    if not backpack then
-        return
-    end
-    local tool = backpack:FindFirstChild(weaponName)
-    if tool then
-        humanoid:EquipTool(tool)
-    end
-end
-
-local function getQuestGui()
-    if not playerGui then
         return nil
     end
-    local mainGui = playerGui:FindFirstChild("Main")
-    if not mainGui then
-        return nil
-    end
-    return mainGui:FindFirstChild("Quest")
-end
 
-local function isQuestVisible()
-    local questGui = getQuestGui()
-    return questGui and questGui.Visible
-end
-
-local function getQuestTitleText()
-    local questGui = getQuestGui()
-    if not questGui then
-        return ""
-    end
-    local container = questGui:FindFirstChild("Container")
-    local questTitle = container and container:FindFirstChild("QuestTitle")
-    local title = questTitle and questTitle:FindFirstChild("Title")
-    if title and title:IsA("TextLabel") then
-        return title.Text
-    end
-    return ""
-end
-
-local function travelTo(targetCFrame)
-    if not targetCFrame then
-        return
-    end
-    local hrp = getHRP()
+    local hrp = character:FindFirstChild("HumanoidRootPart")
     if not hrp then
-        return
+        return nil
     end
-    local distance = (hrp.Position - targetCFrame.Position).Magnitude
-    if state.bypassTP and distance > 1500 then
-        BTP(targetCFrame)
-        task.wait(0.1)
-    else
-        ATween(targetCFrame)
+
+    local parts = getRockPartsByType(typeName)
+    local closestPart = nil
+    local closestDist = math.huge
+
+    for _, part in ipairs(parts) do
+        if part and part.Parent then
+            local dist = (hrp.Position - part.Position).Magnitude
+            if dist < closestDist then
+                closestDist = dist
+                closestPart = part
+            end
+        end
     end
+
+    return closestPart
 end
 
-local function attackEnemy(enemy)
-    local humanoid = enemy:FindFirstChildOfClass("Humanoid")
-    local enemyHRP = enemy:FindFirstChild("HumanoidRootPart")
-    if not humanoid or not enemyHRP or humanoid.Health <= 0 then
+local function tweenToMineTarget(targetPart)
+    local player = Players.LocalPlayer
+    local character = player.Character
+    if not character then
         return false
     end
-    AutoHaki()
-    EquipWeapon(state.weaponName)
-    enemyHRP.CanCollide = false
-    humanoid.WalkSpeed = 0
-    enemyHRP.Size = Vector3.new(60, 60, 60)
-    local offset = CFrame.new(0, state.attackHeight, 0)
-    travelTo(enemyHRP.CFrame * offset)
-    VirtualUser:CaptureController()
-    VirtualUser:Button1Down(Vector2.new(1280, 672))
-    VirtualUser:Button1Up(Vector2.new(1280, 672))
+
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp or not targetPart or not targetPart.Parent then
+        return false
+    end
+
+    -- Đứng hơi cao hơn và không quá sát Maria để tránh va vào hitbox
+    local targetPos = targetPart.Position + Vector3.new(0, 6, 0)
+    local distance = (hrp.Position - targetPos).Magnitude
+    -- Giảm tốc độ tween lại để tránh anti-tp (di chuyển chậm hơn, tự nhiên hơn)
+    local time = math.clamp(distance / 25, 0.4, 4)
+
+    local tween = TweenService:Create(
+        hrp,
+        TweenInfo.new(time, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
+        { CFrame = CFrame.new(targetPos, targetPart.Position) }
+    )
+
+    tween:Play()
+    tween.Completed:Wait()
+
     return true
 end
 
-local function findNearestEnemy(maxDistance)
-    local enemies = Workspace:FindFirstChild("Enemies")
-    local hrp = getHRP()
-    if not enemies or not hrp then
-        return nil
+local function swingPickaxeUntilMinedType(targetPart, typeName)
+    if not targetPart or not typeName or typeName == "" then
+        return
     end
-    local best, bestDist
-    for _, enemy in ipairs(enemies:GetChildren()) do
-        local humanoid = enemy:FindFirstChildOfClass("Humanoid")
-        local enemyHRP = enemy:FindFirstChild("HumanoidRootPart")
-        if humanoid and enemyHRP and humanoid.Health > 0 then
-            local distance = (enemyHRP.Position - hrp.Position).Magnitude
-            if not bestDist or distance < bestDist then
-                bestDist = distance
-                best = enemy
+
+    local model = targetPart:FindFirstAncestorWhichIsA("Model")
+    if not model or model.Name ~= typeName then
+        return
+    end
+
+    local args = { "Pickaxe" }
+    local toolRF = game:GetService("ReplicatedStorage")
+        :WaitForChild("Shared")
+        :WaitForChild("Packages")
+        :WaitForChild("Knit")
+        :WaitForChild("Services")
+        :WaitForChild("ToolService")
+        :WaitForChild("RF")
+        :WaitForChild("ToolActivated")
+
+    while autoMineEnabled do
+        if not model or not model.Parent then
+            break
+        end
+        pcall(function()
+            toolRF:InvokeServer(unpack(args))
+        end)
+        task.wait(0.15)
+    end
+end
+
+rockTypes = scanRockTypes()
+
+rockTypeDropdown = sections.Farm:Dropdown({
+    Name = "Select Rock",
+    Multi = false,
+    Required = false,
+    Options = rockTypes,
+    Default = getDefaultOption(rockTypes, selectedRockType),
+    Callback = function(value)
+        if typeof(value) == "table" then
+            for name, state in pairs(value) do
+                if state then
+                    value = name
+                    break
+                end
+            end
+        end
+
+        if not value or value == "" then
+            selectedRockType = nil
+            ConfigSystem.CurrentConfig.SelectedRockType = nil
+        else
+            selectedRockType = value
+            ConfigSystem.CurrentConfig.SelectedRockType = value
+            notify("Mine", "Đã chọn loại đá: " .. tostring(value), 3)
+        end
+
+        ConfigSystem.SaveConfig()
+    end,
+}, "SelectRockDropdown")
+
+-- Đảm bảo hiển thị lại lựa chọn đã lưu khi mở script
+if selectedRockType and rockTypeDropdown and rockTypeDropdown.UpdateSelection then
+    for _, name in ipairs(rockTypes) do
+        if name == selectedRockType then
+            rockTypeDropdown:UpdateSelection(selectedRockType)
+            break
+        end
+    end
+end
+
+sections.Farm:Button({
+    Name = "Refresh Rock List",
+    Callback = function()
+        local list = scanRockTypes()
+        if rockTypeDropdown then
+            if rockTypeDropdown.ClearOptions then
+                rockTypeDropdown:ClearOptions()
+            end
+            if rockTypeDropdown.InsertOptions then
+                rockTypeDropdown:InsertOptions(list)
+            end
+            if selectedRockType and rockTypeDropdown.UpdateSelection then
+                rockTypeDropdown:UpdateSelection(selectedRockType)
+            end
+        end
+        notify("Mine", "Đã cập nhật danh sách đá.", 3)
+    end,
+}, "RefreshRockListButton")
+
+sections.Farm:Toggle({
+    Name = "Auto Mine",
+    Default = autoMineEnabled,
+    Callback = function(value)
+        autoMineEnabled = value
+        ConfigSystem.CurrentConfig.AutoMineEnabled = value
+        ConfigSystem.SaveConfig()
+
+        if value then
+            if not selectedRockType then
+                notify("Mine", "Chưa chọn loại đá! Hãy chọn ở dropdown.", 4)
+            else
+                notify("Mine", "Đã bật Auto Mine cho: " .. tostring(selectedRockType), 3)
+            end
+        else
+            notify("Mine", "Đã tắt Auto Mine", 3)
+        end
+    end,
+}, "AutoMineToggle")
+
+task.spawn(function()
+    while task.wait(0.3) do
+        -- Nếu Auto Buy And Use đang hoạt động, tạm dừng Auto Mine
+        if autoMineEnabled and selectedRockType and not isAutoBuyAndUseActive then
+            local target = getClosestRockPartByType(selectedRockType)
+            if target then
+                tweenToMineTarget(target)
+                swingPickaxeUntilMinedType(target, selectedRockType)
             end
         end
     end
-    if maxDistance and bestDist and bestDist > maxDistance then
+end)
+
+--// ENEMY TAB
+sections.Enemy:Header({ Name = "Enemy" })
+
+local function extractEnemyTypeName(fullName)
+    if not fullName or fullName == "" then
         return nil
     end
-    return best
+
+    -- Loại bỏ số ở cuối: "Zombie123" -> "Zombie", "EliteZombie234" -> "EliteZombie"
+    -- Giữ nguyên khoảng trắng: "Delver Zombie123" -> "Delver Zombie"
+    local baseName = fullName:gsub("%d+$", "")
+    if baseName == "" then
+        return nil
+    end
+
+    -- Loại bỏ khoảng trắng thừa ở cuối
+    baseName = baseName:gsub("%s+$", "")
+
+    return baseName
 end
 
-local function farmQuestTargets()
-    if not state.autoFarm then
+local function scanEnemyTypes()
+    enemyTypes = {}
+    local seen = {}
+
+    -- Chỉ dùng ReplicatedStorage.Assets.Mobs để scan tên, Auto Farm Enemy vẫn dùng workspace như cũ
+    local assetsFolder = ReplicatedStorage:FindFirstChild("Assets")
+    if not assetsFolder then
+        return enemyTypes
+    end
+
+    local mobsRoot = assetsFolder:FindFirstChild("Mobs")
+    if not mobsRoot then
+        return enemyTypes
+    end
+
+    for _, child in ipairs(mobsRoot:GetDescendants()) do
+        if child:IsA("Model") then
+            -- Bỏ qua các model tên chung chung như "Model"
+            if child.Name ~= "Model" then
+                -- Dùng extractEnemyTypeName để loại bỏ số đuôi (nếu có) và khoảng trắng thừa
+                local typeName = extractEnemyTypeName(child.Name)
+                if typeName and typeName ~= "" and not seen[typeName] then
+                    seen[typeName] = true
+                    table.insert(enemyTypes, typeName)
+                end
+            end
+        end
+    end
+
+    table.sort(enemyTypes)
+
+    return enemyTypes
+end
+
+-- Scan tên potion từ ReplicatedStorage.Assets.Extras.Potion
+local function scanPotionModels()
+    potionNames = {}
+
+    local assetsFolder = ReplicatedStorage:FindFirstChild("Assets")
+    if not assetsFolder then
+        return potionNames
+    end
+
+    local extrasFolder = assetsFolder:FindFirstChild("Extras")
+    if not extrasFolder then
+        return potionNames
+    end
+
+    local potionFolder = extrasFolder:FindFirstChild("Potion")
+    if not potionFolder then
+        return potionNames
+    end
+
+    for _, child in ipairs(potionFolder:GetChildren()) do
+        if child:IsA("Model") then
+            table.insert(potionNames, child.Name)
+        end
+    end
+
+    table.sort(potionNames)
+    return potionNames
+end
+
+local function getEnemyModelsByType(typeName)
+    local result = {}
+
+    if not typeName or typeName == "" then
+        return result
+    end
+
+    local livingRoot = workspace:FindFirstChild("Living")
+    if not livingRoot then
+        return result
+    end
+
+    for _, child in ipairs(livingRoot:GetChildren()) do
+        if child:IsA("Model") then
+            local extractedType = extractEnemyTypeName(child.Name)
+            if extractedType == typeName then
+                table.insert(result, child)
+            end
+        end
+    end
+
+    return result
+end
+
+local function isEnemyDead(enemyModel)
+    if not enemyModel or not enemyModel.Parent then
+        return true
+    end
+
+    local statusFolder = enemyModel:FindFirstChild("Status")
+    if statusFolder and statusFolder:FindFirstChild("Dead") then
+        return true
+    end
+
+    return false
+end
+
+local function getClosestEnemyByType(typeName)
+    local player = Players.LocalPlayer
+    local character = player.Character
+    if not character then
+        return nil
+    end
+
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        return nil
+    end
+
+    local enemies = getEnemyModelsByType(typeName)
+    local closestEnemy = nil
+    local closestDist = math.huge
+
+    for _, enemy in ipairs(enemies) do
+        -- Bỏ qua enemy chết
+        if not isEnemyDead(enemy) and enemy and enemy.Parent then
+            local rootPart = enemy:FindFirstChild("HumanoidRootPart") or enemy.PrimaryPart or
+                enemy:FindFirstChildWhichIsA("BasePart", true)
+            if rootPart then
+                local dist = (hrp.Position - rootPart.Position).Magnitude
+                if dist < closestDist then
+                    closestDist = dist
+                    closestEnemy = enemy
+                end
+            end
+        end
+    end
+
+    return closestEnemy
+end
+
+local function isEnemyDead(enemyModel)
+    if not enemyModel or not enemyModel.Parent then
+        return true
+    end
+
+    local statusFolder = enemyModel:FindFirstChild("Status")
+    if statusFolder and statusFolder:FindFirstChild("Dead") then
+        return true
+    end
+
+    return false
+end
+
+local currentTween = nil
+
+local function tweenAboveEnemy(enemyModel, distance)
+    local player = Players.LocalPlayer
+    local character = player.Character
+    if not character then
+        return false
+    end
+
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp or not enemyModel or not enemyModel.Parent then
+        return false
+    end
+
+    local enemyRootPart = enemyModel:FindFirstChild("HumanoidRootPart") or enemyModel.PrimaryPart or
+        enemyModel:FindFirstChildWhichIsA("BasePart", true)
+    if not enemyRootPart then
+        return false
+    end
+
+    -- Hủy tween cũ nếu còn chạy
+    if currentTween then
+        pcall(function() currentTween:Cancel() end)
+    end
+
+    -- Tween lên trên đầu enemy với khoảng cách đã chọn, luôn hướng về enemy
+    local targetPos = enemyRootPart.Position + Vector3.new(0, distance, 0)
+    local distanceToTarget = (hrp.Position - targetPos).Magnitude
+
+    -- Nếu ở gần enemy thì tween nhanh nhưng mượt hơn (chậm lại một chút), xa thì tween chậm để tránh anti-tp
+    local time
+    if distanceToTarget <= 100 then
+        -- Gần: vẫn nhanh nhưng không quá giật
+        time = math.clamp(distanceToTarget / 20, 0.4, 4)
+    else
+        -- Xa: an toàn, chậm hơn
+        time = math.clamp(distanceToTarget / 8, 0.8, 7)
+    end
+
+    -- Luôn hướng về enemy
+    local lookAtCFrame = CFrame.new(targetPos, enemyRootPart.Position)
+
+    currentTween = TweenService:Create(
+        hrp,
+        TweenInfo.new(time, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
+        { CFrame = lookAtCFrame }
+    )
+
+    currentTween:Play()
+    return true
+end
+
+local function swingWeaponUntilEnemyDead(enemyModel, typeName)
+    if not enemyModel or not typeName or typeName == "" then
         return
     end
-    local enemies = Workspace:FindFirstChild("Enemies")
-    if not enemies then
+
+    -- Kiểm tra enemy còn sống không
+    if not enemyModel or not enemyModel.Parent then
         return
     end
-    if not Mon then
-        CheckQuest()
+
+    local args = { "Weapon" }
+    local toolRF = game:GetService("ReplicatedStorage")
+        :WaitForChild("Shared")
+        :WaitForChild("Packages")
+        :WaitForChild("Knit")
+        :WaitForChild("Services")
+        :WaitForChild("ToolService")
+        :WaitForChild("RF")
+        :WaitForChild("ToolActivated")
+
+    local player = Players.LocalPlayer
+    local character = player.Character
+    if not character then
         return
     end
-    local questTitle = getQuestTitleText()
-    if questTitle ~= "" and NameMon and not questTitle:find(NameMon) then
-        invokeCommF("AbandonQuest")
+
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then
         return
     end
-    local foundTarget = false
-    for _, enemy in ipairs(enemies:GetChildren()) do
-        if enemy.Name == Mon then
-            foundTarget = true
-            local humanoid = enemy:FindFirstChildOfClass("Humanoid")
-            local enemyHRP = enemy:FindFirstChild("HumanoidRootPart")
-            if humanoid and enemyHRP and humanoid.Health > 0 then
-                repeat
-                    if not state.autoFarm then
-                        return
+
+    -- Lưu lại character hiện tại, nếu người chơi chết & respawn (character đổi) thì dừng vòng while để chạy lại logic tween
+    local trackedCharacter = character
+
+    -- Tắt AutoRotate để tránh game tự động xoay nhân vật
+    local originalAutoRotate = hrp.AssemblyAngularVelocity
+    hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+
+    -- Tắt gravity để giữ độ cao
+    local bodyVelocity = hrp:FindFirstChild("BodyVelocity")
+    if not bodyVelocity then
+        bodyVelocity = Instance.new("BodyVelocity")
+        bodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
+        bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        bodyVelocity.Parent = hrp
+    end
+
+    -- Chờ tween hoàn tất trước khi bắt đầu set CFrame
+    local tweenCompleted = false
+    if currentTween then
+        task.spawn(function()
+            pcall(function() currentTween.Completed:Wait() end)
+            tweenCompleted = true
+        end)
+    else
+        tweenCompleted = true
+    end
+
+    -- Bắt đầu giữ vị trí sau khi tween xong
+    local keepPositionConnection
+    keepPositionConnection = RunService.Heartbeat:Connect(function()
+        if not tweenCompleted then
+            return -- Chưa tween xong thì không set CFrame
+        end
+
+        -- Nếu AutoFarm tắt, enemy mất, enemy chết, hoặc nhân vật đổi (respawn) thì dừng
+        if not autoFarmEnemyEnabled
+            or not enemyModel
+            or not enemyModel.Parent
+            or isEnemyDead(enemyModel)
+            or Players.LocalPlayer.Character ~= trackedCharacter
+            or not hrp
+            or not hrp.Parent then
+            if keepPositionConnection then
+                keepPositionConnection:Disconnect()
+            end
+            return
+        end
+
+        local enemyRootPart = enemyModel:FindFirstChild("HumanoidRootPart") or enemyModel.PrimaryPart or
+            enemyModel:FindFirstChildWhichIsA("BasePart", true)
+        if enemyRootPart and hrp and hrp.Parent then
+            local targetPos = enemyRootPart.Position + Vector3.new(0, selectedDistance, 0)
+            -- Giữ vị trí và hướng về enemy
+            hrp.CFrame = CFrame.new(targetPos, enemyRootPart.Position)
+            -- Giữ vận tốc = 0 để không rơi
+            if bodyVelocity then
+                bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+            end
+        end
+    end)
+
+    while autoFarmEnemyEnabled do
+        -- Nếu người chơi đã respawn (character đổi) hoặc HRP mất thì thoát vòng lặp để hàm ngoài gọi lại tween với character mới
+        if Players.LocalPlayer.Character ~= trackedCharacter or not hrp or not hrp.Parent then
+            break
+        end
+
+        -- Kiểm tra enemy còn sống hay không (status.Dead)
+        if isEnemyDead(enemyModel) then
+            break
+        end
+
+        if not enemyModel or not enemyModel.Parent then
+            break
+        end
+
+        -- Invoke weapon attack
+        pcall(function()
+            toolRF:InvokeServer(unpack(args))
+        end)
+
+        task.wait(0.15)
+    end
+
+    -- Dọn dẹp khi dừng - hủy tween nếu còn chạy
+    if currentTween then
+        pcall(function() currentTween:Cancel() end)
+        currentTween = nil
+    end
+
+    if keepPositionConnection then
+        keepPositionConnection:Disconnect()
+    end
+    if bodyVelocity and bodyVelocity.Parent then
+        bodyVelocity:Destroy()
+    end
+    -- Khôi phục AutoRotate
+    if hrp and hrp.Parent then
+        hrp.AssemblyAngularVelocity = originalAutoRotate
+    end
+end
+
+enemyTypes = scanEnemyTypes()
+
+enemyTypeDropdown = sections.Enemy:Dropdown({
+    Name = "Select Enemy",
+    Multi = true,
+    Required = false,
+    Options = enemyTypes,
+    Default = selectedEnemyType,
+    Callback = function(value)
+        if typeof(value) == "table" then
+            selectedEnemyType = {}
+            for name, state in pairs(value) do
+                if state then
+                    table.insert(selectedEnemyType, name)
+                end
+            end
+        end
+
+        if not selectedEnemyType or #selectedEnemyType == 0 then
+            selectedEnemyType = {}
+            ConfigSystem.CurrentConfig.SelectedEnemyType = {}
+            notify("Enemy", "Đã bỏ chọn loại enemy", 3)
+        else
+            ConfigSystem.CurrentConfig.SelectedEnemyType = selectedEnemyType
+            notify("Enemy", "Đã chọn: " .. table.concat(selectedEnemyType, ", "), 3)
+        end
+
+        ConfigSystem.SaveConfig()
+    end,
+}, "SelectEnemyDropdown")
+
+-- Đảm bảo hiển thị lại lựa chọn đã lưu khi mở script
+if selectedEnemyType and enemyTypeDropdown and enemyTypeDropdown.UpdateSelection then
+    for _, name in ipairs(enemyTypes) do
+        if name == selectedEnemyType then
+            enemyTypeDropdown:UpdateSelection(selectedEnemyType)
+            break
+        end
+    end
+end
+
+sections.Enemy:Button({
+    Name = "Refresh Enemy List",
+    Callback = function()
+        local list = scanEnemyTypes()
+        if enemyTypeDropdown then
+            if enemyTypeDropdown.ClearOptions then
+                enemyTypeDropdown:ClearOptions()
+            end
+            if enemyTypeDropdown.InsertOptions then
+                enemyTypeDropdown:InsertOptions(list)
+            end
+            if selectedEnemyType and enemyTypeDropdown.UpdateSelection then
+                enemyTypeDropdown:UpdateSelection(selectedEnemyType)
+            end
+        end
+        notify("Enemy", "Đã cập nhật danh sách enemy.", 3)
+    end,
+}, "RefreshEnemyListButton")
+
+local distanceDropdown = sections.Enemy:Dropdown({
+    Name = "Select Distance",
+    Multi = false,
+    Required = false,
+    Options = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" },
+    Default = tostring(selectedDistance),
+    Callback = function(value)
+        if typeof(value) == "table" then
+            for name, state in pairs(value) do
+                if state then
+                    value = name
+                    break
+                end
+            end
+        end
+
+        local dist = tonumber(value)
+        if dist and dist >= 1 and dist <= 10 then
+            selectedDistance = dist
+            ConfigSystem.CurrentConfig.SelectedDistance = selectedDistance
+            ConfigSystem.SaveConfig()
+            notify("Enemy", "Khoảng cách: " .. tostring(selectedDistance), 3)
+        end
+    end,
+}, "SelectDistanceDropdown")
+
+-- Đảm bảo hiển thị lại lựa chọn đã lưu khi mở script
+if selectedDistance and distanceDropdown and distanceDropdown.UpdateSelection then
+    distanceDropdown:UpdateSelection(tostring(selectedDistance))
+end
+
+sections.Enemy:Toggle({
+    Name = "Auto Farm Enemy",
+    Default = autoFarmEnemyEnabled,
+    Callback = function(value)
+        autoFarmEnemyEnabled = value
+        ConfigSystem.CurrentConfig.AutoFarmEnemyEnabled = value
+        ConfigSystem.SaveConfig()
+
+        if value then
+            if not selectedEnemyType then
+                notify("Enemy", "Chưa chọn loại enemy! Hãy chọn ở dropdown.", 4)
+            else
+                notify("Enemy", "Đã bật Auto Farm Enemy cho: " .. tostring(selectedEnemyType), 3)
+            end
+        else
+            notify("Enemy", "Đã tắt Auto Farm Enemy", 3)
+        end
+    end,
+}, "AutoFarmEnemyToggle")
+
+task.spawn(function()
+    while true do
+        -- Nếu Auto Buy And Use đang hoạt động, tạm dừng Auto Farm Enemy
+        if autoFarmEnemyEnabled and selectedEnemyType and #selectedEnemyType > 0 and not isAutoBuyAndUseActive then
+            local closestTarget = nil
+            local closestDist = math.huge
+            local hrp = Players.LocalPlayer.Character and
+                Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+            -- Tìm enemy gần nhất từ tất cả loại được chọn
+            for _, enemyTypeName in ipairs(selectedEnemyType) do
+                local target = getClosestEnemyByType(enemyTypeName)
+                if target and hrp then
+                    local rootPart = target:FindFirstChild("HumanoidRootPart") or target.PrimaryPart or
+                        target:FindFirstChildWhichIsA("BasePart", true)
+                    if rootPart then
+                        local dist = (hrp.Position - rootPart.Position).Magnitude
+                        if dist < closestDist then
+                            closestDist = dist
+                            closestTarget = target
+                        end
                     end
-                    attackEnemy(enemy)
-                    task.wait(0.15)
-                until not state.autoFarm or humanoid.Health <= 0 or not enemy.Parent or not isQuestVisible()
+                end
             end
+
+            if closestTarget then
+                -- Kiểm tra lại enemy không dead trước khi bắt đầu
+                if not isEnemyDead(closestTarget) then
+                    -- Bắt đầu tween (không chờ)
+                    tweenAboveEnemy(closestTarget, selectedDistance)
+                    -- Chuyển sang đánh ngay lập tức, không chờ tween xong
+                    swingWeaponUntilEnemyDead(closestTarget, extractEnemyTypeName(closestTarget.Name))
+                    -- Sau khi enemy chết/break ra, quay lại ngay lập tức
+                else
+                    task.wait(0.1) -- Nếu enemy dead, chờ ngắn rồi tìm lại
+                end
+            else
+                task.wait(0.1) -- Nếu không tìm thấy, chờ rồi tìm lại
+            end
+        else
+            task.wait(0.3) -- Nếu disabled, chờ lâu hơn
         end
     end
-    if not foundTarget and CFrameMon then
-        travelTo(CFrameMon)
+end)
+
+--// SHOP TAB - Shop Potion
+sections.ShopPotion:Header({ Name = "Shop Potion" })
+
+-- Tween tới vị trí cố định gần Maria (không còn phụ thuộc model Maria)
+local function tweenToMaria()
+    local player = Players.LocalPlayer
+    local character = player.Character
+    if not character then
+        return false
     end
+
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        return false
+    end
+
+    -- Vị trí cố định (tọa độ bạn đưa)
+    local targetPos = Vector3.new(-153.73959721191406, 27.377073287963867, 116.34660339355469)
+    local distance = (hrp.Position - targetPos).Magnitude
+    local time = math.clamp(distance / 12, 0.8, 6)
+
+    -- Hướng nhìn giữ nguyên hướng hiện tại theo trục Y
+    local lookAtCFrame = CFrame.new(targetPos, targetPos + (hrp.CFrame.LookVector * Vector3.new(1, 0, 1)))
+
+    local tween = TweenService:Create(
+        hrp,
+        TweenInfo.new(time, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
+        { CFrame = lookAtCFrame }
+    )
+
+    tween:Play()
+    tween.Completed:Wait()
+
+    return true
 end
 
-local function ensureQuestForMode()
-    CheckQuest()
-    if not NameQuest or not LevelQuest or not CFrameQuest then
-        return
+-- Dropdown chọn Potion (scan từ ReplicatedStorage.Assets.Extras.Potion)
+potionNames = scanPotionModels()
+
+potionDropdown = sections.ShopPotion:Dropdown({
+    Name = "Select Potion",
+    Multi = false,
+    Required = false,
+    Options = potionNames,
+    Default = selectedPotionName,
+    Callback = function(value)
+        if typeof(value) == "table" then
+            for name, state in pairs(value) do
+                if state then
+                    value = name
+                    break
+                end
+            end
+        end
+
+        if not value or value == "" then
+            selectedPotionName = nil
+            notify("Shop Potion", "Đã bỏ chọn potion.", 3)
+        else
+            selectedPotionName = value
+            notify("Shop Potion", "Đã chọn: " .. tostring(value), 3)
+        end
+    end,
+}, "SelectPotionDropdown")
+
+-- Nút refresh danh sách potion
+sections.ShopPotion:Button({
+    Name = "Refresh Potion List",
+    Callback = function()
+        local list = scanPotionModels()
+        if potionDropdown then
+            if potionDropdown.ClearOptions then
+                potionDropdown:ClearOptions()
+            end
+            if potionDropdown.InsertOptions then
+                potionDropdown:InsertOptions(list)
+            end
+            if selectedPotionName and potionDropdown.UpdateSelection then
+                potionDropdown:UpdateSelection(selectedPotionName)
+            end
+        end
+        notify("Shop Potion", "Đã cập nhật danh sách potion.", 3)
+    end,
+}, "RefreshPotionListButton")
+
+-- Toggle Auto Buy And Use Potion
+sections.ShopPotion:Toggle({
+    Name = "Auto Buy And Use",
+    Default = autoBuyAndUsePotionEnabled,
+    Callback = function(value)
+        autoBuyAndUsePotionEnabled = value
+        if value then
+            if not selectedPotionName then
+                notify("Shop Potion", "Chưa chọn potion!", 3)
+            else
+                notify("Shop Potion", "Đã bật Auto Buy And Use: " .. selectedPotionName, 3)
+            end
+        else
+            notify("Shop Potion", "Đã tắt Auto Buy And Use", 3)
+        end
+    end,
+}, "AutoBuyAndUsePotionToggle")
+
+-- Hàm map tên potion sang tên trong Perks (ví dụ: MovementSpeedPotion1 -> SpeedPotion1, LuckyPotion1 -> LuckPotion1)
+local function getPotionPerkName(potionName)
+    if not potionName or potionName == "" then
+        return nil
     end
-    travelTo(CFrameQuest)
-    task.wait(0.2)
-    local hrp = getHRP()
-    if hrp and (hrp.Position - CFrameQuest.Position).Magnitude <= 10 then
-        invokeCommF("StartQuest", NameQuest, LevelQuest)
-    end
+    
+    -- Các pattern mapping phổ biến
+    local mappings = {
+        ["MovementSpeedPotion1"] = "SpeedPotion1",
+        ["LuckyPotion1"] = "LuckPotion1",
+        -- Có thể thêm mapping khác nếu cần
+    }
+    
+    -- Nếu có mapping thì dùng, không thì thử tìm trong Perks với tên gốc hoặc các biến thể
+    return mappings[potionName] or potionName
 end
 
-local function runNoQuestMode()
-    CheckQuest()
-    if not isQuestVisible() then
-        invokeCommF("StartQuest", NameQuest, LevelQuest)
+-- Hàm check potion có trong Perks không
+local function hasPotionInPerks(potionName)
+    local player = Players.LocalPlayer
+    if not player then
+        return false
     end
-    if CFrameMon then
-        travelTo(CFrameMon)
+    
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if not playerGui then
+        return false
     end
-    farmQuestTargets()
+    
+    local hotbar = playerGui:FindFirstChild("Hotbar")
+    if not hotbar then
+        return false
+    end
+    
+    local perks = hotbar:FindFirstChild("Perks")
+    if not perks then
+        return false
+    end
+    
+    -- Thử tìm với tên đã map và tên gốc
+    local perkName = getPotionPerkName(potionName)
+    if perks:FindFirstChild(perkName) then
+        return true
+    end
+    
+    -- Thử tìm với tên gốc
+    if perks:FindFirstChild(potionName) then
+        return true
+    end
+    
+    return false
 end
 
---// UI Layout
-local tabGroup = Window:TabGroup()
-local tabs = {
-    Main = tabGroup:Tab({ Name = "Main", Image = "rbxassetid://10734923549" }),
-    Farm = tabGroup:Tab({ Name = "Farm", Image = "rbxassetid://11963373994" }),
-    Setting = tabGroup:Tab({ Name = "Setting", Image = "rbxassetid://10734950309" }),
-}
+-- Vòng lặp Auto Buy And Use Potion
+task.spawn(function()
+    local toolRF = ReplicatedStorage
+        :WaitForChild("Shared")
+        :WaitForChild("Packages")
+        :WaitForChild("Knit")
+        :WaitForChild("Services")
+        :WaitForChild("ToolService")
+        :WaitForChild("RF")
+        :WaitForChild("ToolActivated")
+    
+    while true do
+        task.wait(0.5)
+        if autoBuyAndUsePotionEnabled and selectedPotionName then
+            -- Bắt đầu 1 chu kỳ Auto Buy & Use: set flag để block Auto Mine / Auto Farm Enemy
+            isAutoBuyAndUseActive = true
 
-local sections = {
-    MainStatus = tabs.Main:Section({ Side = "Left" }),
-    MainControl = tabs.Main:Section({ Side = "Right" }),
-    FarmMain = tabs.Farm:Section({ Side = "Left" }),
-    SettingMain = tabs.Setting:Section({ Side = "Left" }),
-    SettingUtility = tabs.Setting:Section({ Side = "Right" }),
-}
+            local player = Players.LocalPlayer
+            local backpack = player and player:FindFirstChild("Backpack")
+            
+            -- Bước 1: Nếu có potion trong Backpack thì dùng
+            local hasPotion = backpack and backpack:FindFirstChild(selectedPotionName)
+            if hasPotion then
+                pcall(function()
+                    local args = { selectedPotionName }
+                    toolRF:InvokeServer(unpack(args))
+                end)
+            else
+                -- Bước 2: Nếu không có potion trong Backpack, check Perks xem có effect không
+                local hasPotionEffect = hasPotionInPerks(selectedPotionName)
+                if not hasPotionEffect then
+                    -- Không có effect => đã hết potion => đi mua
+                    local ok = tweenToMaria()
+                    if ok then
+                        pcall(function()
+                            local args = { selectedPotionName, 3 }
+                            ProximityPurchaseRF:InvokeServer(unpack(args))
+                        end)
+                    end
+                end
+            end
 
-sections.MainStatus:Header({ Name = "Trạng thái" })
-local questLabel = sections.MainStatus:Label({ Text = "Quest: ..." })
-local monsterLabel = sections.MainStatus:Label({ Text = "Monster: ..." })
-local weaponLabel = sections.MainStatus:Label({ Text = "Weapon: ..." })
+            -- Kết thúc 1 chu kỳ Auto Buy & Use
+            isAutoBuyAndUseActive = false
+        end
+    end
+end)
 
-sections.MainControl:Header({ Name = "Điều khiển" })
-sections.MainControl:Dropdown({
-    Name = "Weapon Category",
-    Options = { "Melee", "Sword", "Fruit", "Gun" },
-    Default = state.weaponCategory,
-    Callback = function(value)
-        state.weaponCategory = value
-        state.weaponName = nil
-        notify("Weapon", "Đang tìm " .. value, 3)
-    end,
-})
-
-sections.MainControl:Dropdown({
-    Name = "Farm Mode",
-    Options = { "Quest", "No Quest" },
-    Default = state.farmMode,
-    Callback = function(value)
-        state.farmMode = value
-        notify("Farm Mode", "Đã chọn: " .. value, 3)
-    end,
-})
-
-sections.MainControl:Toggle({
-    Name = "Auto Farm Level",
-    Default = state.autoFarm,
-    Callback = function(value)
-        state.autoFarm = value
-        _G.AutoFarm = value
-        StopTween(value)
-        notify("Auto Farm", value and "Đã bật Auto Farm" or "Đã tắt Auto Farm", 3)
-    end,
-})
-
-sections.FarmMain:Header({ Name = "Farm Phụ" })
-sections.FarmMain:Toggle({
-    Name = "Auto Farm Nearest",
-    Default = state.autoFarmNearest,
-    Callback = function(value)
-        state.autoFarmNearest = value
-        notify("Nearest Farm", value and "Đã bật" or "Đã tắt", 3)
-    end,
+-- Tab Settings: thông tin cơ bản
+sections.SettingsInfo:Header({ Name = "Thông tin Script" })
+sections.SettingsInfo:Label({
+    Text = "The Forge Script\nNgười chơi: " .. playerName
 })
 
-sections.SettingMain:Header({ Name = "Thiết lập" })
-sections.SettingMain:Toggle({
-    Name = "Auto Set Spawn",
-    Default = state.autoSetSpawn,
-    Callback = function(value)
-        state.autoSetSpawn = value
-    end,
-})
-sections.SettingMain:Toggle({
-    Name = "Auto Haki",
-    Default = state.autoHaki,
-    Callback = function(value)
-        state.autoHaki = value
-    end,
-})
-sections.SettingMain:Toggle({
-    Name = "Bypass TP",
-    Default = state.bypassTP,
-    Callback = function(value)
-        state.bypassTP = value
-    end,
-})
-sections.SettingMain:Toggle({
-    Name = "Fast Attack",
-    Default = state.fastAttack,
-    Callback = function(value)
-        state.fastAttack = value
-    end,
-})
-sections.SettingMain:Slider({
-    Name = "Attack Offset",
-    Min = 10,
-    Max = 80,
-    Default = state.attackHeight,
-    Callback = function(value)
-        state.attackHeight = math.clamp(math.floor(value + 0.5), 10, 80)
-    end,
-})
-
-sections.SettingUtility:Header({ Name = "Thông tin" })
-sections.SettingUtility:Button({
+sections.SettingsInfo:Button({
     Name = "Copy Player Name",
     Callback = function()
         if setclipboard then
-            setclipboard(player.Name)
-            notify("Clipboard", "Đã sao chép tên người chơi.", 3)
+            setclipboard(playerName)
+            notify("Thông báo", "Đã sao chép tên người chơi.", 3)
         else
-            notify("Clipboard", player.Name, 3)
+            notify("Thông báo", playerName, 3)
         end
     end,
-})
-sections.SettingUtility:SubLabel({
-    Text = "Nhấn Left Alt để ẩn/hiện UI",
+}, "CopyPlayerNameButton")
+
+sections.SettingsInfo:SubLabel({
+    Text = "Phím tắt: Left Alt (hoặc icon mobile) để ẩn/hiện UI"
 })
 
-tabs.Main:Select()
+--// SETTINGS MISC TAB
+sections.SettingsMisc:Header({ Name = "Misc" })
+
+sections.SettingsMisc:Toggle({
+    Name = "Anti AFK",
+    Default = antiAFKEnabled,
+    Callback = function(value)
+        antiAFKEnabled = value
+        ConfigSystem.CurrentConfig.AntiAFKEnabled = value
+        ConfigSystem.SaveConfig()
+        notify("Anti AFK", (value and "Bật" or "Tắt") .. " Anti AFK", 3)
+    end,
+}, "AntiAFKToggle")
+
+-- Global settings giống style UI.lua
+local globalSettings = {
+    UIBlurToggle = Window:GlobalSetting({
+        Name = "UI Blur",
+        Default = Window:GetAcrylicBlurState(),
+        Callback = function(bool)
+            Window:SetAcrylicBlurState(bool)
+            notify(Window.Settings.Title, (bool and "Enabled" or "Disabled") .. " UI Blur", 4)
+        end,
+    }),
+    NotificationToggle = Window:GlobalSetting({
+        Name = "Notifications",
+        Default = Window:GetNotificationsState(),
+        Callback = function(bool)
+            Window:SetNotificationsState(bool)
+            notify(Window.Settings.Title, (bool and "Enabled" or "Disabled") .. " Notifications", 4)
+        end,
+    }),
+    UserInfoToggle = Window:GlobalSetting({
+        Name = "Show User Info",
+        Default = Window:GetUserInfoState(),
+        Callback = function(bool)
+            Window:SetUserInfoState(bool)
+            notify(Window.Settings.Title, (bool and "Showing" or "Redacted") .. " User Info", 4)
+        end,
+    })
+}
+
+tabs.Farm:Select()
 
 Window.onUnloaded(function()
-    state.autoFarm = false
-    state.autoFarmNearest = false
-    _G.AutoFarm = false
-    StopTween(false)
-    notify("Alchemy Hub", "UI đã đóng.", 3)
+    notify("DuongTuan Hub", "UI đã được đóng.", 3)
 end)
 
 MacLib:LoadAutoLoadConfig()
 
---// Background tasks
-player.CharacterAdded:Connect(function()
-    task.wait(1)
-    state.weaponName = nil
-    updateWeaponSelection()
-end)
-
-task.spawn(function()
-    while task.wait(1) do
-        pcall(updateWeaponSelection)
-    end
-end)
-
-task.spawn(function()
-    while task.wait(0.5) do
-        local questText = isQuestVisible() and (NameQuest and ("Quest: " .. NameQuest .. " | Lvl: " .. tostring(LevelQuest)) or "Quest: ...") or "Quest: ..."
-        local monsterText = Mon and ("Monster: " .. Mon) or "Monster: ..."
-        local weaponText = state.weaponName or ("Weapon: (" .. state.weaponCategory .. ")")
-        if questLabel and questLabel.Set then
-            questLabel:Set(questText)
-        end
-        if monsterLabel and monsterLabel.Set then
-            monsterLabel:Set(monsterText)
-        end
-        if weaponLabel and weaponLabel.Set then
-            weaponLabel:Set(weaponText)
-        end
-    end
-end)
-
+-- Auto save config đơn giản (5s/lần)
 task.spawn(function()
     while task.wait(5) do
-        if state.autoSetSpawn then
-            invokeCommF("SetSpawnPoint")
-        end
+        pcall(ConfigSystem.SaveConfig)
     end
 end)
 
+-- Anti AFK - di chuyển ngẫu nhiên & nhấn phím để tránh AFK
 task.spawn(function()
-    while task.wait(0.25) do
-        if state.autoFarm then
-            local ok, err = pcall(function()
-                if state.farmMode == "Quest" then
-                    if not isQuestVisible() then
-                        ensureQuestForMode()
-                    else
-                        farmQuestTargets()
-                    end
-                else
-                    runNoQuestMode()
+    local UserInputService = game:GetService("UserInputService")
+    local Players = game:GetService("Players")
+    local player = Players.LocalPlayer
+
+    while true do
+        task.wait(60) -- Mỗi 60 giây kiểm tra một lần
+
+        if antiAFKEnabled and player.Character then
+            local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                -- Di chuyển nhân vật một chút theo các hướng ngẫu nhiên
+                local directions = {
+                    Vector3.new(1, 0, 0),  -- Phải
+                    Vector3.new(-1, 0, 0), -- Trái
+                    Vector3.new(0, 0, 1),  -- Trước
+                    Vector3.new(0, 0, -1), -- Sau
+                }
+
+                local randomDir = directions[math.random(1, #directions)]
+                local moveAmount = 2 + math.random(0, 2) -- Di chuyển 2-4 studs
+
+                -- Di chuyển nhân vật
+                pcall(function()
+                    hrp.CFrame = hrp.CFrame + randomDir * moveAmount
+                end)
+
+                -- Nhấn phím ngẫu nhiên (WASD) để giả lập hoạt động
+                local keys = { Enum.KeyCode.W, Enum.KeyCode.A, Enum.KeyCode.S, Enum.KeyCode.D }
+                local randomKey = keys[math.random(1, #keys)]
+
+                pcall(function()
+                    UserInputService:SendKeyEvent(true, randomKey, false, game)
+                    task.wait(0.1)
+                    UserInputService:SendKeyEvent(false, randomKey, false, game)
+                end)
+
+                -- Thỉnh thoảng (30% chance) xoay camera
+                if math.random(1, 100) <= 30 then
+                    local camera = workspace.CurrentCamera
+                    pcall(function()
+                        camera.CFrame = camera.CFrame * CFrame.Angles(0, math.rad(math.random(-10, 10)), 0)
+                    end)
                 end
-            end)
-            if not ok then
-                warn("[AutoFarm]", err)
             end
         end
     end
 end)
 
+-- Tạo icon floating để giả lập nút Left Alt cho mobile
 task.spawn(function()
-    while task.wait(0.3) do
-        if state.autoFarmNearest then
-            local ok, err = pcall(function()
-                local enemy = findNearestEnemy(450)
-                if enemy then
-                    attackEnemy(enemy)
-                end
-            end)
-            if not ok then
-                warn("[AutoFarmNearest]", err)
+    local ok, errorMsg = pcall(function()
+        if not getgenv().LoadedTheForgeMobileUI == true then
+            getgenv().LoadedTheForgeMobileUI = true
+            local OpenUI = Instance.new("ScreenGui")
+            local ImageButton = Instance.new("ImageButton")
+            local UICorner = Instance.new("UICorner")
+
+            if syn and syn.protect_gui then
+                syn.protect_gui(OpenUI)
+                OpenUI.Parent = game:GetService("CoreGui")
+            elseif gethui then
+                OpenUI.Parent = gethui()
+            else
+                OpenUI.Parent = game:GetService("CoreGui")
             end
+
+            OpenUI.Name = "TheForge_MobileUIButton"
+            OpenUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+            OpenUI.ResetOnSpawn = false
+
+            ImageButton.Parent = OpenUI
+            ImageButton.BackgroundColor3 = Color3.fromRGB(105, 105, 105)
+            ImageButton.BackgroundTransparency = 0.8
+            ImageButton.Position = UDim2.new(0.9, 0, 0.1, 0)
+            ImageButton.Size = UDim2.new(0, 50, 0, 50)
+            ImageButton.Image = "rbxassetid://90319448802378"
+            ImageButton.Draggable = true
+            ImageButton.Transparency = 0.2
+
+            UICorner.CornerRadius = UDim.new(0, 200)
+            UICorner.Parent = ImageButton
+
+            ImageButton.MouseEnter:Connect(function()
+                game:GetService("TweenService"):Create(ImageButton, TweenInfo.new(0.2), {
+                    BackgroundTransparency = 0.5,
+                    Transparency = 0
+                }):Play()
+            end)
+
+            ImageButton.MouseLeave:Connect(function()
+                game:GetService("TweenService"):Create(ImageButton, TweenInfo.new(0.2), {
+                    BackgroundTransparency = 0.8,
+                    Transparency = 0.2
+                }):Play()
+            end)
+
+            ImageButton.MouseButton1Click:Connect(function()
+                game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.LeftAlt, false, game)
+                task.wait(0.1)
+                game:GetService("VirtualInputManager"):SendKeyEvent(false, Enum.KeyCode.LeftAlt, false, game)
+            end)
         end
+    end)
+
+    if not ok then
+        warn("Lỗi khi tạo nút Mobile UI (DuongTuan Hub): " .. tostring(errorMsg))
     end
 end)
 
-RunService.RenderStepped:Connect(function()
-    if state.fastAttack and (state.autoFarm or state.autoFarmNearest) then
-        VirtualUser:CaptureController()
-        VirtualUser:Button1Down(Vector2.new(0, 0), Workspace.CurrentCamera and Workspace.CurrentCamera.CFrame or CFrame.new())
-        VirtualUser:Button1Up(Vector2.new(0, 0), Workspace.CurrentCamera and Workspace.CurrentCamera.CFrame or CFrame.new())
-    end
-end)
-
-notify("Alchemy Hub", "Đã tải MacLib UI mới!", 4)
-
+notify("DuongTuan Hub", "Script đã tải thành công!\nNhấn Left Alt hoặc icon để ẩn/hiện UI", 5)
+print("DuongTuan Hub.lua đã tải thành công!")
