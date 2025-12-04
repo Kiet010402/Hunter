@@ -120,7 +120,7 @@ end
 
 local selectedMineDistance = tonumber(ConfigSystem.CurrentConfig.SelectedMineDistance) or
     ConfigSystem.DefaultConfig.SelectedMineDistance
-if selectedMineDistance < 1 or selectedMineDistance > 6 then
+if selectedMineDistance < 1 or selectedMineDistance > 10 then
     selectedMineDistance = ConfigSystem.DefaultConfig.SelectedMineDistance
 end
 local rockTypes = {}
@@ -325,8 +325,16 @@ local function tweenToMineTarget(targetPart)
     local downOffset = -(selectedMineDistance or 3)
     local targetPos = targetPart.Position + Vector3.new(0, downOffset, 0)
     local distance = (hrp.Position - targetPos).Magnitude
-    -- Giảm tốc độ tween lại để tránh anti-tp (di chuyển chậm hơn, tự nhiên hơn)
-    local time = math.clamp(distance / 25, 0.4, 4)
+
+    -- Nếu ở gần rock thì tween nhanh nhưng mượt, xa thì tween chậm giống Enemy
+    local time
+    if distance <= 100 then
+        -- Gần: vẫn nhanh nhưng không quá giật
+        time = math.clamp(distance / 20, 0.4, 4)
+    else
+        -- Xa: an toàn, chậm hơn
+        time = math.clamp(distance / 8, 0.8, 7)
+    end
 
     local lookAtPos = targetPart.Position + Vector3.new(0, 5, 0) -- nhìn chếch lên trên viên đá
     local tween = TweenService:Create(
@@ -396,7 +404,8 @@ local function swingPickaxeUntilMinedType(targetPart, typeName)
             or not model.Parent
             or Players.LocalPlayer.Character ~= trackedCharacter
             or not hrp
-            or not hrp.Parent then
+            or not hrp.Parent
+            or isAutoBuyAndUseActive then
             if keepPositionConnection then
                 keepPositionConnection:Disconnect()
             end
@@ -416,8 +425,8 @@ local function swingPickaxeUntilMinedType(targetPart, typeName)
     end)
 
     while autoMineEnabled do
-        -- Nếu nhân vật respawn hoặc viên đá bị phá thì dừng
-        if Players.LocalPlayer.Character ~= trackedCharacter or not hrp or not hrp.Parent then
+        -- Nếu nhân vật respawn, viên đá bị phá hoặc Auto Buy & Use chạy thì dừng
+        if Players.LocalPlayer.Character ~= trackedCharacter or not hrp or not hrp.Parent or isAutoBuyAndUseActive then
             break
         end
         if not model or not model.Parent then
@@ -497,12 +506,12 @@ sections.Farm:Button({
     end,
 }, "RefreshRockListButton")
 
--- Dropdown chọn khoảng cách Mine (ở dưới viên đá, 1-6)
+-- Dropdown chọn khoảng cách Mine (ở dưới viên đá, 1-10)
 local mineDistanceDropdown = sections.Farm:Dropdown({
     Name = "Select Distance (Mine)",
     Multi = false,
     Required = false,
-    Options = { "1", "2", "3", "4", "5", "6" },
+    Options = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" },
     Default = tostring(selectedMineDistance),
     Callback = function(value)
         if typeof(value) == "table" then
@@ -515,7 +524,7 @@ local mineDistanceDropdown = sections.Farm:Dropdown({
         end
 
         local dist = tonumber(value)
-        if dist and dist >= 1 and dist <= 6 then
+        if dist and dist >= 1 and dist <= 10 then
             selectedMineDistance = dist
             ConfigSystem.CurrentConfig.SelectedMineDistance = selectedMineDistance
             ConfigSystem.SaveConfig()
@@ -552,13 +561,19 @@ task.spawn(function()
     while task.wait(0.3) do
         -- Nếu Auto Buy And Use đang hoạt động, tạm dừng Auto Mine
         if autoMineEnabled and selectedRockType and #selectedRockType > 0 and not isAutoBuyAndUseActive then
-            local target = getClosestRockPartByTypes(selectedRockType)
-            if target then
-                tweenToMineTarget(target)
-                -- Truyền loại đá của target vào hàm đào
-                local model = target:FindFirstAncestorWhichIsA("Model")
-                local rockName = model and model.Name or nil
-                swingPickaxeUntilMinedType(target, rockName)
+            local player = Players.LocalPlayer
+            local character = player.Character
+            local hrp = character and character:FindFirstChild("HumanoidRootPart")
+            if character and hrp then
+                -- Chỉ chạy Auto Mine khi nhân vật đã respawn đầy đủ
+                local target = getClosestRockPartByTypes(selectedRockType)
+                if target then
+                    tweenToMineTarget(target)
+                    -- Truyền loại đá của target vào hàm đào
+                    local model = target:FindFirstAncestorWhichIsA("Model")
+                    local rockName = model and model.Name or nil
+                    swingPickaxeUntilMinedType(target, rockName)
+                end
             end
         end
     end
