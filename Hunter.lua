@@ -35,6 +35,8 @@ ConfigSystem.DefaultConfig = {
     SelectedEnemyType = nil,
     SelectedDistance = 3,
     AutoFarmEnemyEnabled = false,
+    SelectedPotionName = nil,
+    AutoBuyAndUsePotionEnabled = false,
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -137,8 +139,14 @@ local enemyTypeDropdown = nil
 --// Shop Potion state
 local potionNames = {}
 local potionDropdown = nil
-local selectedPotionName = nil
-local autoBuyAndUsePotionEnabled = false
+local selectedPotionName = ConfigSystem.CurrentConfig.SelectedPotionName
+if selectedPotionName ~= nil and type(selectedPotionName) ~= "string" then
+    selectedPotionName = nil
+end
+local autoBuyAndUsePotionEnabled = ConfigSystem.CurrentConfig.AutoBuyAndUsePotionEnabled
+if type(autoBuyAndUsePotionEnabled) ~= "boolean" then
+    autoBuyAndUsePotionEnabled = ConfigSystem.DefaultConfig.AutoBuyAndUsePotionEnabled
+end
 local isAutoBuyAndUseActive = false -- Flag ưu tiên Auto Buy And Use (block Auto Mine & Auto Farm Enemy)
 
 --// Sections
@@ -975,11 +983,15 @@ potionDropdown = sections.ShopPotion:Dropdown({
 
         if not value or value == "" then
             selectedPotionName = nil
+            ConfigSystem.CurrentConfig.SelectedPotionName = nil
             notify("Shop Potion", "Đã bỏ chọn potion.", 3)
         else
             selectedPotionName = value
+            ConfigSystem.CurrentConfig.SelectedPotionName = value
             notify("Shop Potion", "Đã chọn: " .. tostring(value), 3)
         end
+
+        ConfigSystem.SaveConfig()
     end,
 }, "SelectPotionDropdown")
 
@@ -1009,6 +1021,8 @@ sections.ShopPotion:Toggle({
     Default = autoBuyAndUsePotionEnabled,
     Callback = function(value)
         autoBuyAndUsePotionEnabled = value
+        ConfigSystem.CurrentConfig.AutoBuyAndUsePotionEnabled = value
+        ConfigSystem.SaveConfig()
         if value then
             if not selectedPotionName then
                 notify("Shop Potion", "Chưa chọn potion!", 3)
@@ -1112,6 +1126,8 @@ task.spawn(function()
                             local args = { selectedPotionName, 3 }
                             ProximityPurchaseRF:InvokeServer(unpack(args))
                         end)
+                        -- Sau khi mua xong, chờ 5 giây rồi mới cho Auto Mine / Auto Farm Enemy tiếp tục
+                        task.wait(5)
                     end
                 end
             end
