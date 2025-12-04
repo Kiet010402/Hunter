@@ -928,7 +928,7 @@ end)
 --// SHOP TAB - Shop Potion
 sections.ShopPotion:Header({ Name = "Shop Potion" })
 
--- Tween tới vị trí cố định gần Maria (không còn phụ thuộc model Maria)
+-- Tween tới vị trí cố định mua potion (tùy theo PlaceId)
 local function tweenToMaria()
     local player = Players.LocalPlayer
     local character = player.Character
@@ -941,8 +941,20 @@ local function tweenToMaria()
         return false
     end
 
-    -- Vị trí cố định (tọa độ bạn đưa)
-    local targetPos = Vector3.new(-153.73959721191406, 27.377073287963867, 116.34660339355469)
+    -- Chọn tọa độ theo PlaceId
+    local placeId = game.PlaceId
+    local targetPos
+
+    if placeId == 76558904092080 then
+        -- Place cũ
+        targetPos = Vector3.new(-153.73959721191406, 27.377073287963867, 116.34660339355469)
+    elseif placeId == 129009554587176 then
+        -- Place mới
+        targetPos = Vector3.new(-96.84030151367188, 20.6254825592041, -43.52947235107422)
+    else
+        -- Fallback: dùng tọa độ cũ
+        targetPos = Vector3.new(-153.73959721191406, 27.377073287963867, 116.34660339355469)
+    end
     local distance = (hrp.Position - targetPos).Magnitude
     -- Tween chậm hơn để hạn chế dịch chuyển gấp
     local time = math.clamp(distance / 8, 1.2, 12)
@@ -1217,52 +1229,24 @@ task.spawn(function()
     end
 end)
 
--- Anti AFK - di chuyển ngẫu nhiên & nhấn phím để tránh AFK
+-- Anti AFK - dùng VirtualUser giả lập click chuột
 task.spawn(function()
-    local UserInputService = game:GetService("UserInputService")
-    local Players = game:GetService("Players")
+    local vu = game:GetService("VirtualUser")
     local player = Players.LocalPlayer
 
     while true do
-        task.wait(60) -- Mỗi 60 giây kiểm tra một lần
+        task.wait(120) -- 120 giây
 
-        if antiAFKEnabled and player.Character then
-            local hrp = player.Character:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                -- Di chuyển nhân vật một chút theo các hướng ngẫu nhiên
-                local directions = {
-                    Vector3.new(1, 0, 0),  -- Phải
-                    Vector3.new(-1, 0, 0), -- Trái
-                    Vector3.new(0, 0, 1),  -- Trước
-                    Vector3.new(0, 0, -1), -- Sau
-                }
-
-                local randomDir = directions[math.random(1, #directions)]
-                local moveAmount = 2 + math.random(0, 2) -- Di chuyển 2-4 studs
-
-                -- Di chuyển nhân vật
-                pcall(function()
-                    hrp.CFrame = hrp.CFrame + randomDir * moveAmount
-                end)
-
-                -- Nhấn phím ngẫu nhiên (WASD) để giả lập hoạt động
-                local keys = { Enum.KeyCode.W, Enum.KeyCode.A, Enum.KeyCode.S, Enum.KeyCode.D }
-                local randomKey = keys[math.random(1, #keys)]
-
-                pcall(function()
-                    UserInputService:SendKeyEvent(true, randomKey, false, game)
-                    task.wait(0.1)
-                    UserInputService:SendKeyEvent(false, randomKey, false, game)
-                end)
-
-                -- Thỉnh thoảng (30% chance) xoay camera
-                if math.random(1, 100) <= 30 then
-                    local camera = workspace.CurrentCamera
-                    pcall(function()
-                        camera.CFrame = camera.CFrame * CFrame.Angles(0, math.rad(math.random(-10, 10)), 0)
-                    end)
+        if antiAFKEnabled then
+            pcall(function()
+                local cam = workspace.CurrentCamera
+                if cam then
+                    vu:Button2Down(Vector2.new(0, 0), cam.CFrame)
+                    task.wait(1)
+                    vu:Button2Up(Vector2.new(0, 0), cam.CFrame)
                 end
-            end
+                print("Anti-AFK chạy lúc:", os.time())
+            end)
         end
     end
 end)
