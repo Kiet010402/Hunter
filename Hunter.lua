@@ -692,14 +692,15 @@ local function swingWeaponUntilEnemyDead(enemyModel, typeName)
             return -- Chưa tween xong thì không set CFrame
         end
 
-        -- Nếu AutoFarm tắt, enemy mất, enemy chết, hoặc nhân vật đổi (respawn) thì dừng
+        -- Nếu AutoFarm tắt, enemy mất, enemy chết, nhân vật đổi (respawn) hoặc Auto Buy & Use đang chạy thì dừng
         if not autoFarmEnemyEnabled
             or not enemyModel
             or not enemyModel.Parent
             or isEnemyDead(enemyModel)
             or Players.LocalPlayer.Character ~= trackedCharacter
             or not hrp
-            or not hrp.Parent then
+            or not hrp.Parent
+            or isAutoBuyAndUseActive then
             if keepPositionConnection then
                 keepPositionConnection:Disconnect()
             end
@@ -720,8 +721,8 @@ local function swingWeaponUntilEnemyDead(enemyModel, typeName)
     end)
 
     while autoFarmEnemyEnabled do
-        -- Nếu người chơi đã respawn (character đổi) hoặc HRP mất thì thoát vòng lặp để hàm ngoài gọi lại tween với character mới
-        if Players.LocalPlayer.Character ~= trackedCharacter or not hrp or not hrp.Parent then
+        -- Nếu người chơi đã respawn (character đổi), HRP mất hoặc Auto Buy & Use đang chạy thì thoát vòng lặp
+        if Players.LocalPlayer.Character ~= trackedCharacter or not hrp or not hrp.Parent or isAutoBuyAndUseActive then
             break
         end
 
@@ -935,7 +936,8 @@ local function tweenToMaria()
     -- Vị trí cố định (tọa độ bạn đưa)
     local targetPos = Vector3.new(-153.73959721191406, 27.377073287963867, 116.34660339355469)
     local distance = (hrp.Position - targetPos).Magnitude
-    local time = math.clamp(distance / 12, 0.8, 6)
+    -- Tween chậm hơn để hạn chế dịch chuyển gấp
+    local time = math.clamp(distance / 8, 1.2, 12)
 
     -- Hướng nhìn giữ nguyên hướng hiện tại theo trục Y
     local lookAtCFrame = CFrame.new(targetPos, targetPos + (hrp.CFrame.LookVector * Vector3.new(1, 0, 1)))
