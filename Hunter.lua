@@ -28,14 +28,14 @@ end
 
 --// Config System (tương tự UI.lua, rút gọn cho TheForge)
 local ConfigSystem = {}
-ConfigSystem.FileName = "TheForgeConfig_" .. Players.LocalPlayer.Name .. ".json"
+ConfigSystem.FileName = "HTHubTheForgeConfig_" .. Players.LocalPlayer.Name .. ".json"
 ConfigSystem.DefaultConfig = {
     SelectedRockType = nil,
     AutoMineEnabled = false,
     SelectedEnemyType = nil,
-    SelectedDistance = 3,
+    SelectedDistance = 6,
     AutoFarmEnemyEnabled = false,
-    SelectedMineDistance = 3,
+    SelectedMineDistance = 6,
     SelectedPotionName = nil,
     AutoBuyAndUsePotionEnabled = false,
 }
@@ -73,7 +73,7 @@ ConfigSystem.LoadConfig()
 local playerName = Players.LocalPlayer.Name
 
 local Window = MacLib:Window({
-    Title = "DuongTuan Hub",
+    Title = "HT HUB | The Forge",
     Subtitle = "Xin chào, " .. playerName,
     Size = UDim2.fromOffset(720, 500),
     DragStyle = 1,
@@ -95,7 +95,7 @@ local function notify(title, desc, duration)
     end
 end
 
-MacLib:SetFolder("DuongTuanHub")
+MacLib:SetFolder("HTHubTheForge")
 
 --// Tabs
 local tabGroup = Window:TabGroup()
@@ -508,7 +508,7 @@ sections.Farm:Button({
 
 -- Dropdown chọn khoảng cách Mine (ở dưới viên đá, 1-10)
 local mineDistanceDropdown = sections.Farm:Dropdown({
-    Name = "Select Distance (Mine)",
+    Name = "Select Distance",
     Multi = false,
     Required = false,
     Options = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" },
@@ -1221,14 +1221,14 @@ local function getPotionPerkName(potionName)
     if not potionName or potionName == "" then
         return nil
     end
-    
+
     -- Các pattern mapping phổ biến
     local mappings = {
         ["MovementSpeedPotion1"] = "SpeedPotion1",
         ["LuckyPotion1"] = "LuckPotion1",
         -- Có thể thêm mapping khác nếu cần
     }
-    
+
     -- Nếu có mapping thì dùng, không thì thử tìm trong Perks với tên gốc hoặc các biến thể
     return mappings[potionName] or potionName
 end
@@ -1239,33 +1239,33 @@ local function hasPotionInPerks(potionName)
     if not player then
         return false
     end
-    
+
     local playerGui = player:FindFirstChild("PlayerGui")
     if not playerGui then
         return false
     end
-    
+
     local hotbar = playerGui:FindFirstChild("Hotbar")
     if not hotbar then
         return false
     end
-    
+
     local perks = hotbar:FindFirstChild("Perks")
     if not perks then
         return false
     end
-    
+
     -- Thử tìm với tên đã map và tên gốc
     local perkName = getPotionPerkName(potionName)
     if perks:FindFirstChild(perkName) then
         return true
     end
-    
+
     -- Thử tìm với tên gốc
     if perks:FindFirstChild(potionName) then
         return true
     end
-    
+
     return false
 end
 
@@ -1279,7 +1279,7 @@ task.spawn(function()
         :WaitForChild("ToolService")
         :WaitForChild("RF")
         :WaitForChild("ToolActivated")
-    
+
     while true do
         task.wait(0.5)
         if autoBuyAndUsePotionEnabled and selectedPotionName then
@@ -1288,25 +1288,49 @@ task.spawn(function()
 
             local player = Players.LocalPlayer
             local backpack = player and player:FindFirstChild("Backpack")
-            
+            local canAfford = false
+
+            -- Check Gold trong PlayerGui.Main.Screen.Hud.Gold
+            local playerGui = player:FindFirstChild("PlayerGui")
+            if playerGui then
+                local mainGui = playerGui:FindFirstChild("Main")
+                if mainGui and mainGui:FindFirstChild("Screen") and mainGui.Screen:FindFirstChild("Hud") then
+                    local hud = mainGui.Screen.Hud
+                    local goldLabel = hud:FindFirstChild("Gold")
+                    if goldLabel and goldLabel:IsA("TextLabel") then
+                        local text = goldLabel.Text or ""
+                        local digits = text:gsub("[^%d]", "")
+                        local amount = tonumber(digits) or 0
+                        if amount >= 600 then
+                            canAfford = true
+                        end
+                    end
+                end
+            end
+
             -- Bước 1: Nếu có potion trong Backpack thì dùng
-            local hasPotion = backpack and backpack:FindFirstChild(selectedPotionName)
-            if hasPotion then
-                pcall(function()
-                    local args = { selectedPotionName }
-                    toolRF:InvokeServer(unpack(args))
-                end)
-            else
-                -- Bước 2: Nếu không có potion trong Backpack, check Perks xem có effect không
-                local hasPotionEffect = hasPotionInPerks(selectedPotionName)
-                if not hasPotionEffect then
-                    -- Không có effect => đã hết potion => đi mua
-                    local ok = tweenToMaria()
-                    if ok then
+            if canAfford then
+                local hasPotion = backpack and backpack:FindFirstChild(selectedPotionName)
+                if hasPotion then
+                    -- Nếu toggle đã tắt giữa chừng thì dừng ngay
+                    if autoBuyAndUsePotionEnabled then
                         pcall(function()
-                            local args = { selectedPotionName, 3 }
-                            ProximityPurchaseRF:InvokeServer(unpack(args))
+                            local args = { selectedPotionName }
+                            toolRF:InvokeServer(unpack(args))
                         end)
+                    end
+                else
+                    -- Bước 2: Nếu không có potion trong Backpack, check Perks xem có effect không
+                    local hasPotionEffect = hasPotionInPerks(selectedPotionName)
+                    if not hasPotionEffect and autoBuyAndUsePotionEnabled then
+                        -- Không có effect => đã hết potion => đi mua
+                        local ok = tweenToMaria()
+                        if ok and autoBuyAndUsePotionEnabled then
+                            pcall(function()
+                                local args = { selectedPotionName, 3 }
+                                ProximityPurchaseRF:InvokeServer(unpack(args))
+                            end)
+                        end
                     end
                 end
             end
@@ -1384,7 +1408,7 @@ local globalSettings = {
 tabs.Farm:Select()
 
 Window.onUnloaded(function()
-    notify("DuongTuan Hub", "UI đã được đóng.", 3)
+    notify("HT HUB | The Forge", "UI đã được đóng.", 3)
 end)
 
 MacLib:LoadAutoLoadConfig()
@@ -1475,9 +1499,9 @@ task.spawn(function()
     end)
 
     if not ok then
-        warn("Lỗi khi tạo nút Mobile UI (DuongTuan Hub): " .. tostring(errorMsg))
+        warn("Lỗi khi tạo nút Mobile UI (HT HUB | The Forge): " .. tostring(errorMsg))
     end
 end)
 
-notify("DuongTuan Hub", "Script đã tải thành công!\nNhấn Left Alt hoặc icon để ẩn/hiện UI", 5)
-print("DuongTuan Hub.lua đã tải thành công!")
+notify("HT HUB | The Forge", "Script đã tải thành công!\nNhấn Left Alt hoặc icon để ẩn/hiện UI", 5)
+print("HTHubTheForge.lua đã tải thành công!")
