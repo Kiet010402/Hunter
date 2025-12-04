@@ -1629,11 +1629,7 @@ local function tweenToTarget(targetName, isNPC)
     -- Tween chậm: tốc độ 8 studs/s, tối thiểu 1.5s, tối đa 15s
     local time = math.clamp(distance / 8, 1.5, 15)
 
-    -- Đảm bảo người chơi đứng thẳng: chỉ xoay theo trục Y (horizontal), không úp mặt xuống
-    local direction = (targetPart.Position - targetPos)
-    direction = Vector3.new(direction.X, 0, direction.Z) -- Chỉ lấy hướng ngang, bỏ trục Y
-    local lookAtPos = targetPos + direction.Unit * 5 -- Điểm nhìn phía trước, cùng độ cao
-    local lookAtCFrame = CFrame.new(targetPos, lookAtPos)
+    local lookAtCFrame = CFrame.new(targetPos, targetPart.Position)
 
     local tween = TweenService:Create(
         hrp,
