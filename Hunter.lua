@@ -1467,14 +1467,28 @@ local function getItemQuantity(itemName)
     return amount
 end
 
+-- Hàm format options với số lượng
+local function getOreOptionsWithQuantity()
+    local options = {}
+    for _, oreName in ipairs(oreNames) do
+        local quantity = getItemQuantity(oreName)
+        if quantity > 0 then
+            table.insert(options, oreName .. " (" .. tostring(quantity) .. ")")
+        else
+            table.insert(options, oreName)
+        end
+    end
+    return options
+end
+
 -- Scan và tạo dropdown
 oreNames = scanOres()
 
-sections.SellItem:Dropdown({
+local itemDropdown = sections.SellItem:Dropdown({
     Name = "Select Item",
     Multi = false,
     Required = false,
-    Options = oreNames,
+    Options = getOreOptionsWithQuantity(),
     Default = selectedItemName,
     Callback = function(value)
         if typeof(value) == "table" then
@@ -1486,10 +1500,12 @@ sections.SellItem:Dropdown({
             end
         end
 
-        if not value or value == "" then
-            selectedItemName = nil
+        -- Extract tên item từ format "Iron (13)" -> "Iron"
+        if value and value ~= "" then
+            local itemName = value:gsub("%s*%(%d+%)", "") -- Loại bỏ " (13)"
+            selectedItemName = itemName
         else
-            selectedItemName = value
+            selectedItemName = nil
         end
     end,
 }, "SelectItemDropdown")
@@ -1499,6 +1515,25 @@ sections.SellItem:Button({
     Callback = function()
         local list = scanOres()
         oreNames = list
+        if itemDropdown then
+            local options = getOreOptionsWithQuantity()
+            if itemDropdown.ClearOptions then
+                itemDropdown:ClearOptions()
+            end
+            if itemDropdown.InsertOptions then
+                itemDropdown:InsertOptions(options)
+            end
+            if selectedItemName then
+                -- Tìm và update selection với số lượng mới
+                for _, opt in ipairs(options) do
+                    local itemName = opt:gsub("%s*%(%d+%)", "")
+                    if itemName == selectedItemName and itemDropdown.UpdateSelection then
+                        itemDropdown:UpdateSelection(opt)
+                        break
+                    end
+                end
+            end
+        end
         notify("Sell Item", "Đã cập nhật danh sách item.", 3)
     end,
 }, "RefreshItemListButton")
@@ -1511,9 +1546,12 @@ sections.SellItem:Toggle({
         if value then
             if not selectedItemName then
                 notify("Sell Item", "Chưa chọn item!", 3)
+            else
+                -- Reset flag khi bật lại để chờ lại Greedy Cey
+                hasWaitedForGreedyCey = false
             end
         else
-            -- Reset flag khi tắt để khi bật lại sẽ chờ lại Greedy Cey
+            -- Reset flag khi tắt
             hasWaitedForGreedyCey = false
         end
     end,
@@ -1544,13 +1582,16 @@ task.spawn(function()
         if autoSellItemEnabled and selectedItemName then
             -- Bước 1: Chờ Greedy Cey xuất hiện (chỉ 1 lần duy nhất)
             if not hasWaitedForGreedyCey then
-                pcall(function()
-                    workspace:WaitForChild("Proximity"):WaitForChild("Greedy Cey")
-                    hasWaitedForGreedyCey = true
-                end)
+                local prox = workspace:FindFirstChild("Proximity")
+                if prox then
+                    local greedyCey = prox:FindFirstChild("Greedy Cey")
+                    if greedyCey then
+                        hasWaitedForGreedyCey = true
+                    end
+                end
             end
 
-            -- Bước 2: Mở dialogue với Greedy Cey
+            -- Bước 2: Mở dialogue với Greedy Cey (chỉ khi đã tìm thấy Greedy Cey)
             if hasWaitedForGreedyCey then
                 pcall(function()
                     local dialogueArgs = { "SellConfirmMisc" }
@@ -1560,7 +1601,7 @@ task.spawn(function()
                 task.wait(0.5)
             end
 
-            -- Bước 3: Bán item
+            -- Bước 3: Bán item (chỉ khi đã tìm thấy Greedy Cey)
             if hasWaitedForGreedyCey then
                 local quantity = getItemQuantity(selectedItemName)
                 if quantity > 0 then
@@ -1575,6 +1616,32 @@ task.spawn(function()
                         }
                         sellRF:InvokeServer(unpack(args))
                     end)
+                end
+            end
+        end
+    end
+end)
+
+-- Tự động cập nhật số lượng trong dropdown mỗi 3 giây
+task.spawn(function()
+    while true do
+        task.wait(3)
+        if itemDropdown then
+            local options = getOreOptionsWithQuantity()
+            if itemDropdown.ClearOptions then
+                itemDropdown:ClearOptions()
+            end
+            if itemDropdown.InsertOptions then
+                itemDropdown:InsertOptions(options)
+            end
+            if selectedItemName then
+                -- Tìm và update selection với số lượng mới
+                for _, opt in ipairs(options) do
+                    local itemName = opt:gsub("%s*%(%d+%)", "")
+                    if itemName == selectedItemName and itemDropdown.UpdateSelection then
+                        itemDropdown:UpdateSelection(opt)
+                        break
+                    end
                 end
             end
         end
