@@ -1626,8 +1626,8 @@ local function tweenToTarget(targetName, isNPC)
 
     local targetPos = targetPart.Position + Vector3.new(0, 3, 0)
     local distance = (hrp.Position - targetPos).Magnitude
-    -- Tween chậm: tốc độ 8 studs/s, tối thiểu 1.5s, tối đa 15s
-    local time = math.clamp(distance / 8, 1.5, 15)
+    -- Tween chậm: tốc độ 8 studs/s, tối thiểu 1.5s, tối đa 8s
+    local time = math.clamp(distance / 10, 1.5, 8)
 
     local lookAtCFrame = CFrame.new(targetPos, targetPart.Position)
 
