@@ -166,6 +166,7 @@ local isAutoBuyAndUseActive = false -- Flag ưu tiên Auto Buy And Use (block Au
 local oreNames = {}
 local selectedItemName = nil
 local autoSellItemEnabled = false
+local hasWaitedForGreedyCey = false -- Flag để chỉ chờ Greedy Cey 1 lần duy nhất
 
 --// Teleport state
 local npcNames = {}
@@ -1511,6 +1512,9 @@ sections.SellItem:Toggle({
             if not selectedItemName then
                 notify("Sell Item", "Chưa chọn item!", 3)
             end
+        else
+            -- Reset flag khi tắt để khi bật lại sẽ chờ lại Greedy Cey
+            hasWaitedForGreedyCey = false
         end
     end,
 }, "AutoSellItemToggle")
@@ -1526,22 +1530,52 @@ task.spawn(function()
         :WaitForChild("RF")
         :WaitForChild("RunCommand")
 
+    local forceDialogueRF = ReplicatedStorage
+        :WaitForChild("Shared")
+        :WaitForChild("Packages")
+        :WaitForChild("Knit")
+        :WaitForChild("Services")
+        :WaitForChild("ProximityService")
+        :WaitForChild("RF")
+        :WaitForChild("ForceDialogue")
+
     while true do
         task.wait(1) -- Check mỗi 1 giây
         if autoSellItemEnabled and selectedItemName then
-            local quantity = getItemQuantity(selectedItemName)
-            if quantity > 0 then
+            -- Bước 1: Chờ Greedy Cey xuất hiện (chỉ 1 lần duy nhất)
+            if not hasWaitedForGreedyCey then
                 pcall(function()
-                    local args = {
-                        "SellConfirm",
-                        {
-                            Basket = {
-                                [selectedItemName] = quantity
+                    workspace:WaitForChild("Proximity"):WaitForChild("Greedy Cey")
+                    hasWaitedForGreedyCey = true
+                end)
+            end
+
+            -- Bước 2: Mở dialogue với Greedy Cey
+            if hasWaitedForGreedyCey then
+                pcall(function()
+                    local dialogueArgs = { "SellConfirmMisc" }
+                    forceDialogueRF:InvokeServer(unpack(dialogueArgs))
+                end)
+                -- Chờ một chút để dialogue mở xong
+                task.wait(0.5)
+            end
+
+            -- Bước 3: Bán item
+            if hasWaitedForGreedyCey then
+                local quantity = getItemQuantity(selectedItemName)
+                if quantity > 0 then
+                    pcall(function()
+                        local args = {
+                            "SellConfirm",
+                            {
+                                Basket = {
+                                    [selectedItemName] = quantity
+                                }
                             }
                         }
-                    }
-                    sellRF:InvokeServer(unpack(args))
-                end)
+                        sellRF:InvokeServer(unpack(args))
+                    end)
+                end
             end
         end
     end
@@ -1626,7 +1660,7 @@ local function tweenToTarget(targetName, isNPC)
 
     local targetPos = targetPart.Position + Vector3.new(0, 3, 0)
     local distance = (hrp.Position - targetPos).Magnitude
-    -- Tween chậm: tốc độ 8 studs/s, tối thiểu 1.5s, tối đa 8s
+    -- Tween chậm: tốc độ 10 studs/s, tối thiểu 1.5s, tối đa 8s
     local time = math.clamp(distance / 10, 1.5, 8)
 
     local lookAtCFrame = CFrame.new(targetPos, targetPart.Position)
