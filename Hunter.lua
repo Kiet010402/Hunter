@@ -102,7 +102,7 @@ local tabGroup = Window:TabGroup()
 local tabs = {
     Farm = tabGroup:Tab({ Name = "Farm", Image = "rbxassetid://10734923549" }),
     Settings = tabGroup:Tab({ Name = "Settings", Image = "rbxassetid://10734950309" }),
-    Shop = tabGroup:Tab({ Name = "Shop", Image = "rbxassetid://10734923549" }),
+    Shop = tabGroup:Tab({ Name = "Shop", Image = "rbxassetid://10734952273" }),
 }
 
 --// Mine state
@@ -1093,6 +1093,8 @@ end)
 sections.ShopPotion:Header({ Name = "Shop Potion" })
 
 -- Tween tới vị trí cố định mua potion (tùy theo PlaceId)
+local currentMariaTween = nil
+
 local function tweenToMaria()
     local player = Players.LocalPlayer
     local character = player.Character
@@ -1126,15 +1128,41 @@ local function tweenToMaria()
     -- Hướng nhìn giữ nguyên hướng hiện tại theo trục Y
     local lookAtCFrame = CFrame.new(targetPos, targetPos + (hrp.CFrame.LookVector * Vector3.new(1, 0, 1)))
 
+    -- Hủy tween cũ nếu còn chạy
+    if currentMariaTween then
+        pcall(function()
+            currentMariaTween:Cancel()
+        end)
+        currentMariaTween = nil
+    end
+
     local tween = TweenService:Create(
         hrp,
         TweenInfo.new(time, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
         { CFrame = lookAtCFrame }
     )
 
+    currentMariaTween = tween
     tween:Play()
-    tween.Completed:Wait()
 
+    local finished = false
+    tween.Completed:Connect(function()
+        finished = true
+    end)
+
+    -- Chờ tween xong hoặc bị hủy do tắt toggle
+    while not finished do
+        if not autoBuyAndUsePotionEnabled then
+            pcall(function()
+                tween:Cancel()
+            end)
+            currentMariaTween = nil
+            return false
+        end
+        task.wait(0.05)
+    end
+
+    currentMariaTween = nil
     return true
 end
 
