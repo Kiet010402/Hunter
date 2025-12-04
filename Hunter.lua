@@ -35,6 +35,7 @@ ConfigSystem.DefaultConfig = {
     SelectedEnemyType = nil,
     SelectedDistance = 3,
     AutoFarmEnemyEnabled = false,
+    SelectedMineDistance = 3,
     SelectedPotionName = nil,
     AutoBuyAndUsePotionEnabled = false,
 }
@@ -111,6 +112,17 @@ if type(autoMineEnabled) ~= "boolean" then
 end
 
 local selectedRockType = ConfigSystem.CurrentConfig.SelectedRockType
+if type(selectedRockType) == "string" then
+    selectedRockType = { selectedRockType }
+elseif type(selectedRockType) ~= "table" then
+    selectedRockType = {}
+end
+
+local selectedMineDistance = tonumber(ConfigSystem.CurrentConfig.SelectedMineDistance) or
+    ConfigSystem.DefaultConfig.SelectedMineDistance
+if selectedMineDistance < 1 or selectedMineDistance > 6 then
+    selectedMineDistance = ConfigSystem.DefaultConfig.SelectedMineDistance
+end
 local rockTypes = {}
 local rockTypeDropdown = nil
 
@@ -261,6 +273,42 @@ local function getClosestRockPartByType(typeName)
     return closestPart
 end
 
+-- Lấy viên đá gần nhất trong danh sách nhiều loại đá được chọn
+local function getClosestRockPartByTypes(typeList)
+    if not typeList or #typeList == 0 then
+        return nil
+    end
+
+    local player = Players.LocalPlayer
+    local character = player.Character
+    if not character then
+        return nil
+    end
+
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        return nil
+    end
+
+    local closestPart = nil
+    local closestDist = math.huge
+
+    for _, typeName in ipairs(typeList) do
+        local parts = getRockPartsByType(typeName)
+        for _, part in ipairs(parts) do
+            if part and part.Parent then
+                local dist = (hrp.Position - part.Position).Magnitude
+                if dist < closestDist then
+                    closestDist = dist
+                    closestPart = part
+                end
+            end
+        end
+    end
+
+    return closestPart
+end
+
 local function tweenToMineTarget(targetPart)
     local player = Players.LocalPlayer
     local character = player.Character
@@ -273,16 +321,18 @@ local function tweenToMineTarget(targetPart)
         return false
     end
 
-    -- Đứng hơi cao hơn và không quá sát Maria để tránh va vào hitbox
-    local targetPos = targetPart.Position + Vector3.new(0, 6, 0)
+    -- Đứng dưới viên đá một khoảng (theo Dropdown Distance) và ngửa mặt lên
+    local downOffset = -(selectedMineDistance or 3)
+    local targetPos = targetPart.Position + Vector3.new(0, downOffset, 0)
     local distance = (hrp.Position - targetPos).Magnitude
     -- Giảm tốc độ tween lại để tránh anti-tp (di chuyển chậm hơn, tự nhiên hơn)
     local time = math.clamp(distance / 25, 0.4, 4)
 
+    local lookAtPos = targetPart.Position + Vector3.new(0, 5, 0) -- nhìn chếch lên trên viên đá
     local tween = TweenService:Create(
         hrp,
         TweenInfo.new(time, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
-        { CFrame = CFrame.new(targetPos, targetPart.Position) }
+        { CFrame = CFrame.new(targetPos, lookAtPos) }
     )
 
     tween:Play()
@@ -326,27 +376,27 @@ rockTypes = scanRockTypes()
 
 rockTypeDropdown = sections.Farm:Dropdown({
     Name = "Select Rock",
-    Multi = false,
+    Multi = true,
     Required = false,
     Options = rockTypes,
-    Default = getDefaultOption(rockTypes, selectedRockType),
+    Default = selectedRockType,
     Callback = function(value)
         if typeof(value) == "table" then
+            selectedRockType = {}
             for name, state in pairs(value) do
                 if state then
-                    value = name
-                    break
+                    table.insert(selectedRockType, name)
                 end
             end
         end
 
-        if not value or value == "" then
-            selectedRockType = nil
-            ConfigSystem.CurrentConfig.SelectedRockType = nil
+        if not selectedRockType or #selectedRockType == 0 then
+            selectedRockType = {}
+            ConfigSystem.CurrentConfig.SelectedRockType = {}
+            notify("Mine", "Đã bỏ chọn loại đá.", 3)
         else
-            selectedRockType = value
-            ConfigSystem.CurrentConfig.SelectedRockType = value
-            notify("Mine", "Đã chọn loại đá: " .. tostring(value), 3)
+            ConfigSystem.CurrentConfig.SelectedRockType = selectedRockType
+            notify("Mine", "Đã chọn: " .. table.concat(selectedRockType, ", "), 3)
         end
 
         ConfigSystem.SaveConfig()
@@ -355,12 +405,7 @@ rockTypeDropdown = sections.Farm:Dropdown({
 
 -- Đảm bảo hiển thị lại lựa chọn đã lưu khi mở script
 if selectedRockType and rockTypeDropdown and rockTypeDropdown.UpdateSelection then
-    for _, name in ipairs(rockTypes) do
-        if name == selectedRockType then
-            rockTypeDropdown:UpdateSelection(selectedRockType)
-            break
-        end
-    end
+    rockTypeDropdown:UpdateSelection(selectedRockType)
 end
 
 sections.Farm:Button({
@@ -382,6 +427,37 @@ sections.Farm:Button({
     end,
 }, "RefreshRockListButton")
 
+-- Dropdown chọn khoảng cách Mine (ở dưới viên đá, 1-6)
+local mineDistanceDropdown = sections.Farm:Dropdown({
+    Name = "Select Distance (Mine)",
+    Multi = false,
+    Required = false,
+    Options = { "1", "2", "3", "4", "5", "6" },
+    Default = tostring(selectedMineDistance),
+    Callback = function(value)
+        if typeof(value) == "table" then
+            for name, state in pairs(value) do
+                if state then
+                    value = name
+                    break
+                end
+            end
+        end
+
+        local dist = tonumber(value)
+        if dist and dist >= 1 and dist <= 6 then
+            selectedMineDistance = dist
+            ConfigSystem.CurrentConfig.SelectedMineDistance = selectedMineDistance
+            ConfigSystem.SaveConfig()
+            notify("Mine", "Khoảng cách Mine: " .. tostring(selectedMineDistance), 3)
+        end
+    end,
+}, "SelectMineDistanceDropdown")
+
+if selectedMineDistance and mineDistanceDropdown and mineDistanceDropdown.UpdateSelection then
+    mineDistanceDropdown:UpdateSelection(tostring(selectedMineDistance))
+end
+
 sections.Farm:Toggle({
     Name = "Auto Mine",
     Default = autoMineEnabled,
@@ -391,10 +467,10 @@ sections.Farm:Toggle({
         ConfigSystem.SaveConfig()
 
         if value then
-            if not selectedRockType then
+            if not selectedRockType or #selectedRockType == 0 then
                 notify("Mine", "Chưa chọn loại đá! Hãy chọn ở dropdown.", 4)
             else
-                notify("Mine", "Đã bật Auto Mine cho: " .. tostring(selectedRockType), 3)
+                notify("Mine", "Đã bật Auto Mine cho: " .. table.concat(selectedRockType, ", "), 3)
             end
         else
             notify("Mine", "Đã tắt Auto Mine", 3)
@@ -405,11 +481,14 @@ sections.Farm:Toggle({
 task.spawn(function()
     while task.wait(0.3) do
         -- Nếu Auto Buy And Use đang hoạt động, tạm dừng Auto Mine
-        if autoMineEnabled and selectedRockType and not isAutoBuyAndUseActive then
-            local target = getClosestRockPartByType(selectedRockType)
+        if autoMineEnabled and selectedRockType and #selectedRockType > 0 and not isAutoBuyAndUseActive then
+            local target = getClosestRockPartByTypes(selectedRockType)
             if target then
                 tweenToMineTarget(target)
-                swingPickaxeUntilMinedType(target, selectedRockType)
+                -- Truyền loại đá của target vào hàm đào
+                local model = target:FindFirstAncestorWhichIsA("Model")
+                local rockName = model and model.Name or nil
+                swingPickaxeUntilMinedType(target, rockName)
             end
         end
     end
@@ -1007,6 +1086,11 @@ potionDropdown = sections.ShopPotion:Dropdown({
     end,
 }, "SelectPotionDropdown")
 
+-- Đảm bảo hiển thị lại lựa chọn potion đã lưu khi mở script
+if selectedPotionName and potionDropdown and potionDropdown.UpdateSelection then
+    potionDropdown:UpdateSelection(selectedPotionName)
+end
+
 -- Nút refresh danh sách potion
 sections.ShopPotion:Button({
     Name = "Refresh Potion List",
@@ -1134,25 +1218,10 @@ task.spawn(function()
                     -- Không có effect => đã hết potion => đi mua
                     local ok = tweenToMaria()
                     if ok then
-                        -- Mua ngay lập tức
                         pcall(function()
                             local args = { selectedPotionName, 3 }
                             ProximityPurchaseRF:InvokeServer(unpack(args))
                         end)
-
-                        -- Đợi 0.5s cho potion vào Backpack rồi dùng luôn
-                        task.wait(0.5)
-                        local newBackpack = player and player:FindFirstChild("Backpack")
-                        local newPotion = newBackpack and newBackpack:FindFirstChild(selectedPotionName)
-                        if newPotion then
-                            pcall(function()
-                                local useArgs = { selectedPotionName }
-                                toolRF:InvokeServer(unpack(useArgs))
-                            end)
-                        end
-
-                        -- Sau khi buy & use xong, chờ 5 giây rồi mới cho Auto Mine / Auto Farm Enemy tiếp tục
-                        task.wait(5)
                     end
                 end
             end
