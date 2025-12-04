@@ -1282,7 +1282,11 @@ task.spawn(function()
 
     while true do
         task.wait(0.5)
-        if autoBuyAndUsePotionEnabled and selectedPotionName then
+
+        -- Nếu toggle tắt hoặc chưa chọn potion thì đảm bảo flag cũng tắt và bỏ qua
+        if not autoBuyAndUsePotionEnabled or not selectedPotionName then
+            isAutoBuyAndUseActive = false
+        else
             -- Bắt đầu 1 chu kỳ Auto Buy & Use: set flag để block Auto Mine / Auto Farm Enemy
             isAutoBuyAndUseActive = true
 
@@ -1291,25 +1295,24 @@ task.spawn(function()
             local canAfford = false
 
             -- Check Gold trong PlayerGui.Main.Screen.Hud.Gold
-            local playerGui = player:FindFirstChild("PlayerGui")
+            local playerGui = player and player:FindFirstChild("PlayerGui")
             if playerGui then
                 local mainGui = playerGui:FindFirstChild("Main")
-                if mainGui and mainGui:FindFirstChild("Screen") and mainGui.Screen:FindFirstChild("Hud") then
-                    local hud = mainGui.Screen.Hud
-                    local goldLabel = hud:FindFirstChild("Gold")
-                    if goldLabel and goldLabel:IsA("TextLabel") then
-                        local text = goldLabel.Text or ""
-                        local digits = text:gsub("[^%d]", "")
-                        local amount = tonumber(digits) or 0
-                        if amount >= 600 then
-                            canAfford = true
-                        end
+                local screen = mainGui and mainGui:FindFirstChild("Screen")
+                local hud = screen and screen:FindFirstChild("Hud")
+                local goldLabel = hud and hud:FindFirstChild("Gold")
+                if goldLabel and goldLabel:IsA("TextLabel") then
+                    local text = goldLabel.Text or ""
+                    -- Ví dụ: "$464.45" -> "464.45"
+                    local numeric = text:gsub("[^%d%.]", "")
+                    local amount = tonumber(numeric) or 0
+                    if amount >= 600 then
+                        canAfford = true
                     end
                 end
             end
 
-            -- Bước 1: Nếu có potion trong Backpack thì dùng
-            if canAfford then
+            if autoBuyAndUsePotionEnabled and canAfford then
                 local hasPotion = backpack and backpack:FindFirstChild(selectedPotionName)
                 if hasPotion then
                     -- Nếu toggle đã tắt giữa chừng thì dừng ngay
