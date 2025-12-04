@@ -924,12 +924,7 @@ enemyTypeDropdown = sections.Enemy:Dropdown({
 
 -- Đảm bảo hiển thị lại lựa chọn đã lưu khi mở script
 if selectedEnemyType and enemyTypeDropdown and enemyTypeDropdown.UpdateSelection then
-    for _, name in ipairs(enemyTypes) do
-        if name == selectedEnemyType then
-            enemyTypeDropdown:UpdateSelection(selectedEnemyType)
-            break
-        end
-    end
+    enemyTypeDropdown:UpdateSelection(selectedEnemyType)
 end
 
 sections.Enemy:Button({
