@@ -1134,11 +1134,24 @@ task.spawn(function()
                     -- Không có effect => đã hết potion => đi mua
                     local ok = tweenToMaria()
                     if ok then
+                        -- Mua ngay lập tức
                         pcall(function()
                             local args = { selectedPotionName, 3 }
                             ProximityPurchaseRF:InvokeServer(unpack(args))
                         end)
-                        -- Sau khi mua xong, chờ 5 giây rồi mới cho Auto Mine / Auto Farm Enemy tiếp tục
+
+                        -- Đợi 0.5s cho potion vào Backpack rồi dùng luôn
+                        task.wait(0.5)
+                        local newBackpack = player and player:FindFirstChild("Backpack")
+                        local newPotion = newBackpack and newBackpack:FindFirstChild(selectedPotionName)
+                        if newPotion then
+                            pcall(function()
+                                local useArgs = { selectedPotionName }
+                                toolRF:InvokeServer(unpack(useArgs))
+                            end)
+                        end
+
+                        -- Sau khi buy & use xong, chờ 5 giây rồi mới cho Auto Mine / Auto Farm Enemy tiếp tục
                         task.wait(5)
                     end
                 end
