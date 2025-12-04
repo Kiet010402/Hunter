@@ -162,6 +162,11 @@ if type(autoBuyAndUsePotionEnabled) ~= "boolean" then
 end
 local isAutoBuyAndUseActive = false -- Flag ưu tiên Auto Buy And Use (block Auto Mine & Auto Farm Enemy)
 
+--// Sell Item state
+local oreNames = {}
+local selectedItemName = nil
+local autoSellItemEnabled = false
+
 --// Teleport state
 local npcNames = {}
 local selectedNPCName = nil
@@ -173,6 +178,7 @@ local sections = {
     Farm = tabs.Farm:Section({ Side = "Left" }),
     Enemy = tabs.Farm:Section({ Side = "Right" }),
     ShopPotion = tabs.Shop:Section({ Side = "Left" }),
+    SellItem = tabs.Shop:Section({ Side = "Right" }),
     TeleportNPC = tabs.Teleport:Section({ Side = "Left" }),
     TeleportShop = tabs.Teleport:Section({ Side = "Right" }),
     SettingsInfo = tabs.Settings:Section({ Side = "Left" }),
@@ -1365,6 +1371,178 @@ task.spawn(function()
 
             -- Kết thúc 1 chu kỳ Auto Buy & Use
             isAutoBuyAndUseActive = false
+        end
+    end
+end)
+
+--// SELL ITEM SECTION
+sections.SellItem:Header({ Name = "Sell Item" })
+
+-- Hàm scan Ores từ ReplicatedStorage.Assets.Ores
+local function scanOres()
+    oreNames = {}
+    local assetsFolder = ReplicatedStorage:FindFirstChild("Assets")
+    if not assetsFolder then
+        return oreNames
+    end
+
+    local oresFolder = assetsFolder:FindFirstChild("Ores")
+    if not oresFolder then
+        return oreNames
+    end
+
+    for _, child in ipairs(oresFolder:GetChildren()) do
+        if child:IsA("Model") then
+            table.insert(oreNames, child.Name)
+        end
+    end
+
+    table.sort(oreNames)
+    return oreNames
+end
+
+-- Hàm lấy số lượng item từ PlayerGui
+local function getItemQuantity(itemName)
+    local player = Players.LocalPlayer
+    if not player then
+        return 0
+    end
+
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if not playerGui then
+        return 0
+    end
+
+    local menu = playerGui:FindFirstChild("Menu")
+    if not menu then
+        return 0
+    end
+
+    local frame = menu:FindFirstChild("Frame")
+    if not frame then
+        return 0
+    end
+
+    local frame2 = frame:FindFirstChild("Frame")
+    if not frame2 then
+        return 0
+    end
+
+    local menus = frame2:FindFirstChild("Menus")
+    if not menus then
+        return 0
+    end
+
+    local stash = menus:FindFirstChild("Stash")
+    if not stash then
+        return 0
+    end
+
+    local background = stash:FindFirstChild("Background")
+    if not background then
+        return 0
+    end
+
+    local itemFrame = background:FindFirstChild(itemName)
+    if not itemFrame then
+        return 0
+    end
+
+    local main = itemFrame:FindFirstChild("Main")
+    if not main then
+        return 0
+    end
+
+    local quantity = main:FindFirstChild("Quantity")
+    if not quantity or not quantity:IsA("TextLabel") then
+        return 0
+    end
+
+    -- Parse text "x13" -> 13
+    local text = quantity.Text or ""
+    local digits = text:gsub("[^%d]", "")
+    local amount = tonumber(digits) or 0
+
+    return amount
+end
+
+-- Scan và tạo dropdown
+oreNames = scanOres()
+
+sections.SellItem:Dropdown({
+    Name = "Select Item",
+    Multi = false,
+    Required = false,
+    Options = oreNames,
+    Default = selectedItemName,
+    Callback = function(value)
+        if typeof(value) == "table" then
+            for name, state in pairs(value) do
+                if state then
+                    value = name
+                    break
+                end
+            end
+        end
+
+        if not value or value == "" then
+            selectedItemName = nil
+        else
+            selectedItemName = value
+        end
+    end,
+}, "SelectItemDropdown")
+
+sections.SellItem:Button({
+    Name = "Refresh Item List",
+    Callback = function()
+        local list = scanOres()
+        oreNames = list
+        notify("Sell Item", "Đã cập nhật danh sách item.", 3)
+    end,
+}, "RefreshItemListButton")
+
+sections.SellItem:Toggle({
+    Name = "Auto Sell Item",
+    Default = autoSellItemEnabled,
+    Callback = function(value)
+        autoSellItemEnabled = value
+        if value then
+            if not selectedItemName then
+                notify("Sell Item", "Chưa chọn item!", 3)
+            end
+        end
+    end,
+}, "AutoSellItemToggle")
+
+-- Vòng lặp Auto Sell Item
+task.spawn(function()
+    local sellRF = ReplicatedStorage
+        :WaitForChild("Shared")
+        :WaitForChild("Packages")
+        :WaitForChild("Knit")
+        :WaitForChild("Services")
+        :WaitForChild("DialogueService")
+        :WaitForChild("RF")
+        :WaitForChild("RunCommand")
+
+    while true do
+        task.wait(1) -- Check mỗi 1 giây
+        if autoSellItemEnabled and selectedItemName then
+            local quantity = getItemQuantity(selectedItemName)
+            if quantity > 0 then
+                pcall(function()
+                    local args = {
+                        "SellConfirm",
+                        {
+                            Basket = {
+                                [selectedItemName] = quantity
+                            }
+                        }
+                    }
+                    sellRF:InvokeServer(unpack(args))
+                end)
+            end
         end
     end
 end)
