@@ -5,6 +5,12 @@ local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+-- Check Game ID
+if game.GameId ~= 7671049560 then
+    warn("Script only runs on Game ID: 7671049560. Current Game ID: " .. tostring(game.GameId))
+    return
+end
+
 -- RF mua đồ Proximity (Maria shop)
 local ProximityPurchaseRF = ReplicatedStorage
     :WaitForChild("Shared")
@@ -22,7 +28,7 @@ local success, err = pcall(function()
 end)
 
 if not success or not MacLib then
-    warn("Lỗi khi tải UI Library (MacLib): " .. tostring(err))
+    warn("Error loading UI Library (MacLib): " .. tostring(err))
     return
 end
 
@@ -40,6 +46,7 @@ ConfigSystem.DefaultConfig = {
     AutoBuyAndUsePotionEnabled = false,
     SelectedItemName = nil,
     AutoSellItemEnabled = false,
+    AntiAFKEnabled = true,
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -48,7 +55,7 @@ ConfigSystem.SaveConfig = function()
         writefile(ConfigSystem.FileName, HttpService:JSONEncode(ConfigSystem.CurrentConfig))
     end)
     if not ok then
-        warn("Lưu cấu hình thất bại:", saveErr)
+        warn("Failed to save config:", saveErr)
     end
 end
 
@@ -76,7 +83,7 @@ local playerName = Players.LocalPlayer.Name
 
 local Window = MacLib:Window({
     Title = "HT HUB | The Forge",
-    Subtitle = "Xin chào, " .. playerName,
+    Subtitle = "Hello, " .. playerName,
     Size = UDim2.fromOffset(720, 500),
     DragStyle = 1,
     DisabledWindowControls = {},
@@ -146,7 +153,7 @@ if type(autoFarmEnemyEnabled) ~= "boolean" then
 end
 local antiAFKEnabled = ConfigSystem.CurrentConfig.AntiAFKEnabled
 if type(antiAFKEnabled) ~= "boolean" then
-    antiAFKEnabled = false
+    antiAFKEnabled = ConfigSystem.DefaultConfig.AntiAFKEnabled
 end
 local enemyTypes = {}
 local enemyTypeDropdown = nil
@@ -361,7 +368,7 @@ local function tweenToMineTarget(targetPart)
         time = math.clamp(distance / 20, 0.4, 4)
     else
         -- Xa: an toàn, chậm hơn
-        time = math.clamp(distance / 8, 0.8, 7)
+        time = math.clamp(distance / 4, 2, 12)
     end
 
     local lookAtPos = targetPart.Position + Vector3.new(0, 5, 0) -- nhìn chếch lên trên viên đá
@@ -500,10 +507,8 @@ rockTypeDropdown = sections.Farm:Dropdown({
         if not selectedRockType or #selectedRockType == 0 then
             selectedRockType = {}
             ConfigSystem.CurrentConfig.SelectedRockType = {}
-            notify("Mine", "Đã bỏ chọn loại đá.", 3)
         else
             ConfigSystem.CurrentConfig.SelectedRockType = selectedRockType
-            notify("Mine", "Đã chọn: " .. table.concat(selectedRockType, ", "), 3)
         end
 
         ConfigSystem.SaveConfig()
@@ -530,7 +535,6 @@ sections.Farm:Button({
                 rockTypeDropdown:UpdateSelection(selectedRockType)
             end
         end
-        notify("Mine", "Đã cập nhật danh sách đá.", 3)
     end,
 }, "RefreshRockListButton")
 
@@ -556,7 +560,6 @@ local mineDistanceDropdown = sections.Farm:Dropdown({
             selectedMineDistance = dist
             ConfigSystem.CurrentConfig.SelectedMineDistance = selectedMineDistance
             ConfigSystem.SaveConfig()
-            notify("Mine", "Khoảng cách Mine: " .. tostring(selectedMineDistance), 3)
         end
     end,
 }, "SelectMineDistanceDropdown")
@@ -575,7 +578,7 @@ sections.Farm:Toggle({
 
         if value then
             if not selectedRockType or #selectedRockType == 0 then
-                notify("Mine", "Chưa chọn loại đá! Hãy chọn ở dropdown.", 4)
+                notify("Mine", "Please select a rock type!", 4)
             end
         end
     end,
@@ -978,10 +981,8 @@ enemyTypeDropdown = sections.Enemy:Dropdown({
         if not selectedEnemyType or #selectedEnemyType == 0 then
             selectedEnemyType = {}
             ConfigSystem.CurrentConfig.SelectedEnemyType = {}
-            notify("Enemy", "Đã bỏ chọn loại enemy", 3)
         else
             ConfigSystem.CurrentConfig.SelectedEnemyType = selectedEnemyType
-            notify("Enemy", "Đã chọn: " .. table.concat(selectedEnemyType, ", "), 3)
         end
 
         ConfigSystem.SaveConfig()
@@ -1013,7 +1014,6 @@ sections.Enemy:Button({
                 enemyTypeDropdown:UpdateSelection(selectedEnemyType)
             end
         end
-        notify("Enemy", "Đã cập nhật danh sách enemy.", 3)
     end,
 }, "RefreshEnemyListButton")
 
@@ -1038,7 +1038,6 @@ local distanceDropdown = sections.Enemy:Dropdown({
             selectedDistance = dist
             ConfigSystem.CurrentConfig.SelectedDistance = selectedDistance
             ConfigSystem.SaveConfig()
-            notify("Enemy", "Khoảng cách: " .. tostring(selectedDistance), 3)
         end
     end,
 }, "SelectDistanceDropdown")
@@ -1058,7 +1057,7 @@ sections.Enemy:Toggle({
 
         if value then
             if not selectedEnemyType then
-                notify("Enemy", "Chưa chọn loại enemy! Hãy chọn ở dropdown.", 4)
+                notify("Enemy", "Please select an enemy type!", 4)
             end
         end
     end,
@@ -1208,11 +1207,9 @@ potionDropdown = sections.ShopPotion:Dropdown({
         if not value or value == "" then
             selectedPotionName = nil
             ConfigSystem.CurrentConfig.SelectedPotionName = nil
-            notify("Shop Potion", "Đã bỏ chọn potion.", 3)
         else
             selectedPotionName = value
             ConfigSystem.CurrentConfig.SelectedPotionName = value
-            notify("Shop Potion", "Đã chọn: " .. tostring(value), 3)
         end
 
         ConfigSystem.SaveConfig()
@@ -1573,7 +1570,6 @@ sections.SellItem:Button({
                 end
             end
         end
-        notify("Sell Item", "Đã cập nhật danh sách item.", 3)
     end,
 }, "RefreshItemListButton")
 
@@ -1586,7 +1582,7 @@ sections.SellItem:Toggle({
         ConfigSystem.SaveConfig()
         if value then
             if not selectedItemName or #selectedItemName == 0 then
-                notify("Sell Item", "Chưa chọn item!", 3)
+                notify("Sell Item", "Please select an item!", 3)
             else
                 -- Reset model và flag khi bật lại để tìm lại Greedy Cey và mở dialogue lại
                 greedyCeyModel = nil
@@ -1760,13 +1756,13 @@ local function tweenToTarget(targetName, isNPC)
     local player = Players.LocalPlayer
     local character = player.Character
     if not character then
-        notify("Teleport", "Không tìm thấy nhân vật!", 3)
+        notify("Teleport", "Character not found!", 3)
         return false
     end
 
     local hrp = character:FindFirstChild("HumanoidRootPart")
     if not hrp then
-        notify("Teleport", "Không tìm thấy HumanoidRootPart!", 3)
+        notify("Teleport", "HumanoidRootPart not found!", 3)
         return false
     end
 
@@ -1805,7 +1801,7 @@ local function tweenToTarget(targetName, isNPC)
     tween:Play()
     tween.Completed:Wait()
 
-    notify("Teleport", "Đã tween tới " .. targetName, 3)
+    notify("Teleport", "Tweened to " .. targetName, 3)
     return true
 end
 
@@ -1852,7 +1848,7 @@ sections.TeleportNPC:Button({
                 npcDropdown:UpdateSelection(selectedNPCName)
             end
         end
-        notify("Teleport", "Đã cập nhật danh sách NPC.", 3)
+        notify("Teleport", "Updated NPC list.", 3)
     end,
 }, "RefreshNPCListButton")
 
@@ -1860,7 +1856,7 @@ sections.TeleportNPC:Button({
     Name = "Tween To NPC",
     Callback = function()
         if not selectedNPCName then
-            notify("Teleport", "Chưa chọn NPC!", 3)
+            notify("Teleport", "Please select an NPC!", 3)
         else
             tweenToTarget(selectedNPCName, true)
         end
@@ -1913,7 +1909,7 @@ sections.TeleportShop:Button({
                 shopDropdown:UpdateSelection(selectedShopName)
             end
         end
-        notify("Teleport", "Đã cập nhật danh sách Shop.", 3)
+        notify("Teleport", "Updated shop list.", 3)
     end,
 }, "RefreshShopListButton")
 
@@ -1921,7 +1917,7 @@ sections.TeleportShop:Button({
     Name = "Tween To Shop",
     Callback = function()
         if not selectedShopName then
-            notify("Teleport", "Chưa chọn Shop!", 3)
+            notify("Teleport", "Please select a shop!", 3)
         else
             tweenToTarget(selectedShopName, false)
         end
@@ -1929,9 +1925,9 @@ sections.TeleportShop:Button({
 }, "TweenToShopButton")
 
 -- Tab Settings: thông tin cơ bản
-sections.SettingsInfo:Header({ Name = "Thông tin Script" })
+sections.SettingsInfo:Header({ Name = "Script Information" })
 sections.SettingsInfo:Label({
-    Text = "The Forge Script\nNgười chơi: " .. playerName
+    Text = "The Forge Script\nPlayer: " .. playerName
 })
 
 sections.SettingsInfo:Button({
@@ -1939,15 +1935,15 @@ sections.SettingsInfo:Button({
     Callback = function()
         if setclipboard then
             setclipboard(playerName)
-            notify("Thông báo", "Đã sao chép tên người chơi.", 3)
+            notify("Notification", "Copied player name.", 3)
         else
-            notify("Thông báo", playerName, 3)
+            notify("Notification", playerName, 3)
         end
     end,
 }, "CopyPlayerNameButton")
 
 sections.SettingsInfo:SubLabel({
-    Text = "Phím tắt: Left Alt (hoặc icon mobile) để ẩn/hiện UI"
+    Text = "Shortcut: Left Alt (or mobile icon) to hide/show UI"
 })
 
 --// SETTINGS MISC TAB
@@ -1960,7 +1956,7 @@ sections.SettingsMisc:Toggle({
         antiAFKEnabled = value
         ConfigSystem.CurrentConfig.AntiAFKEnabled = value
         ConfigSystem.SaveConfig()
-        notify("Anti AFK", (value and "Bật" or "Tắt") .. " Anti AFK", 3)
+        notify("Anti AFK", (value and "Enabled" or "Disabled") .. " Anti AFK", 3)
     end,
 }, "AntiAFKToggle")
 
@@ -1995,7 +1991,7 @@ local globalSettings = {
 tabs.Farm:Select()
 
 Window.onUnloaded(function()
-    notify("HT HUB | The Forge", "UI đã được đóng.", 3)
+    notify("HT HUB | The Forge", "UI has been closed.", 3)
 end)
 
 MacLib:LoadAutoLoadConfig()
@@ -2023,7 +2019,7 @@ task.spawn(function()
                     task.wait(1)
                     vu:Button2Up(Vector2.new(0, 0), cam.CFrame)
                 end
-                print("Anti-AFK chạy lúc:", os.time())
+                print("Anti-AFK running at:", os.time())
             end)
         end
     end
@@ -2086,9 +2082,9 @@ task.spawn(function()
     end)
 
     if not ok then
-        warn("Lỗi khi tạo nút Mobile UI (HT HUB | The Forge): " .. tostring(errorMsg))
+        warn("Error creating mobile UI button (HT HUB | The Forge): " .. tostring(errorMsg))
     end
 end)
 
-notify("HT HUB | The Forge", "Script đã tải thành công!\nNhấn Left Alt hoặc icon để ẩn/hiện UI", 5)
-print("HTHubTheForge.lua đã tải thành công!")
+notify("HT HUB | The Forge", "Script loaded successfully!\nPress Left Alt or mobile icon to hide/show UI", 5)
+print("HTHubTheForge.lua loaded successfully!")
