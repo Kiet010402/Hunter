@@ -47,6 +47,7 @@ ConfigSystem.DefaultConfig = {
     SelectedItemName = nil,
     AutoSellItemEnabled = false,
     AntiAFKEnabled = true,
+    AutoHideUIEnabled = false,
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -184,8 +185,14 @@ local autoSellItemEnabled = ConfigSystem.CurrentConfig.AutoSellItemEnabled
 if type(autoSellItemEnabled) ~= "boolean" then
     autoSellItemEnabled = ConfigSystem.DefaultConfig.AutoSellItemEnabled
 end
-local greedyCeyModel = nil -- Lưu reference đến Greedy Cey model
+local greedyCeyModel = nil      -- Lưu reference đến Greedy Cey model
 local hasOpenedDialogue = false -- Flag để chỉ mở dialogue 1 lần duy nhất
+
+--// Auto Hide UI state
+local autoHideUIEnabled = ConfigSystem.CurrentConfig.AutoHideUIEnabled
+if type(autoHideUIEnabled) ~= "boolean" then
+    autoHideUIEnabled = ConfigSystem.DefaultConfig.AutoHideUIEnabled
+end
 
 --// Teleport state
 local npcNames = {}
@@ -325,10 +332,23 @@ local function getClosestRockPartByTypes(typeList)
         return nil
     end
 
+    -- Nếu typeList chứa "All", dùng tất cả rockTypes
+    local effectiveTypes = typeList
+    local hasAll = false
+    for _, typeName in ipairs(typeList) do
+        if typeName == "All" then
+            hasAll = true
+            break
+        end
+    end
+    if hasAll then
+        effectiveTypes = rockTypes
+    end
+
     local closestPart = nil
     local closestDist = math.huge
 
-    for _, typeName in ipairs(typeList) do
+    for _, typeName in ipairs(effectiveTypes) do
         local parts = getRockPartsByType(typeName)
         for _, part in ipairs(parts) do
             if part and part.Parent then
@@ -487,19 +507,41 @@ local function swingPickaxeUntilMinedType(targetPart, typeName)
 end
 
 rockTypes = scanRockTypes()
+-- Thêm "All" vào đầu danh sách
+local rockOptions = { "All" }
+for _, rockType in ipairs(rockTypes) do
+    table.insert(rockOptions, rockType)
+end
 
 rockTypeDropdown = sections.Farm:Dropdown({
     Name = "Select Rock",
     Multi = true,
     Required = false,
-    Options = rockTypes,
+    Options = rockOptions,
     Default = selectedRockType,
     Callback = function(value)
         if typeof(value) == "table" then
             selectedRockType = {}
+            local hasAll = false
             for name, state in pairs(value) do
                 if state then
-                    table.insert(selectedRockType, name)
+                    if name == "All" then
+                        hasAll = true
+                    else
+                        table.insert(selectedRockType, name)
+                    end
+                end
+            end
+
+            -- Nếu chọn "All", chọn tất cả các loại đá
+            if hasAll then
+                selectedRockType = {}
+                for _, rockType in ipairs(rockTypes) do
+                    table.insert(selectedRockType, rockType)
+                end
+                -- Cập nhật lại dropdown để hiển thị tất cả (bỏ "All")
+                if rockTypeDropdown and rockTypeDropdown.UpdateSelection then
+                    rockTypeDropdown:UpdateSelection(selectedRockType)
                 end
             end
         end
@@ -523,7 +565,12 @@ end
 sections.Farm:Button({
     Name = "Refresh Rock List",
     Callback = function()
-        local list = scanRockTypes()
+        rockTypes = scanRockTypes()
+        -- Thêm "All" vào đầu danh sách
+        local list = { "All" }
+        for _, rockType in ipairs(rockTypes) do
+            table.insert(list, rockType)
+        end
         if rockTypeDropdown then
             if rockTypeDropdown.ClearOptions then
                 rockTypeDropdown:ClearOptions()
@@ -961,19 +1008,41 @@ local function swingWeaponUntilEnemyDead(enemyModel, typeName)
 end
 
 enemyTypes = scanEnemyTypes()
+-- Thêm "All" vào đầu danh sách
+local enemyOptions = { "All" }
+for _, enemyType in ipairs(enemyTypes) do
+    table.insert(enemyOptions, enemyType)
+end
 
 enemyTypeDropdown = sections.Enemy:Dropdown({
     Name = "Select Enemy",
     Multi = true,
     Required = false,
-    Options = enemyTypes,
+    Options = enemyOptions,
     Default = selectedEnemyType,
     Callback = function(value)
         if typeof(value) == "table" then
             selectedEnemyType = {}
+            local hasAll = false
             for name, state in pairs(value) do
                 if state then
-                    table.insert(selectedEnemyType, name)
+                    if name == "All" then
+                        hasAll = true
+                    else
+                        table.insert(selectedEnemyType, name)
+                    end
+                end
+            end
+
+            -- Nếu chọn "All", chọn tất cả các loại enemy
+            if hasAll then
+                selectedEnemyType = {}
+                for _, enemyType in ipairs(enemyTypes) do
+                    table.insert(selectedEnemyType, enemyType)
+                end
+                -- Cập nhật lại dropdown để hiển thị tất cả (bỏ "All")
+                if enemyTypeDropdown and enemyTypeDropdown.UpdateSelection then
+                    enemyTypeDropdown:UpdateSelection(selectedEnemyType)
                 end
             end
         end
@@ -1002,7 +1071,12 @@ end
 sections.Enemy:Button({
     Name = "Refresh Enemy List",
     Callback = function()
-        local list = scanEnemyTypes()
+        enemyTypes = scanEnemyTypes()
+        -- Thêm "All" vào đầu danh sách
+        local list = { "All" }
+        for _, enemyType in ipairs(enemyTypes) do
+            table.insert(list, enemyType)
+        end
         if enemyTypeDropdown then
             if enemyTypeDropdown.ClearOptions then
                 enemyTypeDropdown:ClearOptions()
@@ -1073,7 +1147,20 @@ task.spawn(function()
                 Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 
             -- Tìm enemy gần nhất từ tất cả loại được chọn
-            for _, enemyTypeName in ipairs(selectedEnemyType) do
+            -- Nếu selectedEnemyType chứa "All", dùng tất cả enemyTypes
+            local effectiveEnemyTypes = selectedEnemyType
+            local hasAll = false
+            for _, typeName in ipairs(selectedEnemyType) do
+                if typeName == "All" then
+                    hasAll = true
+                    break
+                end
+            end
+            if hasAll then
+                effectiveEnemyTypes = enemyTypes
+            end
+
+            for _, enemyTypeName in ipairs(effectiveEnemyTypes) do
                 local target = getClosestEnemyByType(enemyTypeName)
                 if target and hrp then
                     local rootPart = target:FindFirstChild("HumanoidRootPart") or target.PrimaryPart or
@@ -1649,7 +1736,7 @@ task.spawn(function()
             if greedyCeyModel and hasOpenedDialogue then
                 local basket = {}
                 local hasItems = false
-                
+
                 -- Lấy số lượng của tất cả item đã chọn
                 for _, itemName in ipairs(selectedItemName) do
                     local quantity = getItemQuantity(itemName)
@@ -1658,7 +1745,7 @@ task.spawn(function()
                         hasItems = true
                     end
                 end
-                
+
                 -- Bán tất cả item cùng lúc nếu có
                 if hasItems then
                     pcall(function()
@@ -1960,6 +2047,16 @@ sections.SettingsMisc:Toggle({
     end,
 }, "AntiAFKToggle")
 
+sections.SettingsMisc:Toggle({
+    Name = "Auto Hide UI",
+    Default = autoHideUIEnabled,
+    Callback = function(value)
+        autoHideUIEnabled = value
+        ConfigSystem.CurrentConfig.AutoHideUIEnabled = value
+        ConfigSystem.SaveConfig()
+    end,
+}, "AutoHideUIToggle")
+
 -- Global settings giống style UI.lua
 local globalSettings = {
     UIBlurToggle = Window:GlobalSetting({
@@ -2020,6 +2117,21 @@ task.spawn(function()
                     vu:Button2Up(Vector2.new(0, 0), cam.CFrame)
                 end
                 print("Anti-AFK running at:", os.time())
+            end)
+        end
+    end
+end)
+
+-- Auto Hide UI - tự động ẩn UI khi bật
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+
+        if autoHideUIEnabled and Window then
+            pcall(function()
+                if Window.Visible ~= nil then
+                    Window.Visible = false
+                end
             end)
         end
     end
