@@ -47,7 +47,6 @@ ConfigSystem.DefaultConfig = {
     SelectedItemName = nil,
     AutoSellItemEnabled = false,
     AntiAFKEnabled = true,
-    AutoHideUIEnabled = false,
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -187,12 +186,6 @@ if type(autoSellItemEnabled) ~= "boolean" then
 end
 local greedyCeyModel = nil      -- Lưu reference đến Greedy Cey model
 local hasOpenedDialogue = false -- Flag để chỉ mở dialogue 1 lần duy nhất
-
---// Auto Hide UI state
-local autoHideUIEnabled = ConfigSystem.CurrentConfig.AutoHideUIEnabled
-if type(autoHideUIEnabled) ~= "boolean" then
-    autoHideUIEnabled = ConfigSystem.DefaultConfig.AutoHideUIEnabled
-end
 
 --// Teleport state
 local npcNames = {}
@@ -2047,28 +2040,6 @@ sections.SettingsMisc:Toggle({
     end,
 }, "AntiAFKToggle")
 
-sections.SettingsMisc:Toggle({
-    Name = "Auto Hide UI",
-    Default = autoHideUIEnabled,
-    Callback = function(value)
-        autoHideUIEnabled = value
-        ConfigSystem.CurrentConfig.AutoHideUIEnabled = value
-        ConfigSystem.SaveConfig()
-        
-        -- Nếu bật toggle, ngay lập tức minimize UI
-        if value and Window then
-            task.wait(0.1) -- Đợi một chút để đảm bảo toggle đã được xử lý
-            pcall(function()
-                if Window.Minimize then
-                    Window:Minimize()
-                elseif Window.Visible ~= nil then
-                    Window.Visible = false
-                end
-            end)
-        end
-    end,
-}, "AutoHideUIToggle")
-
 -- Global settings giống style UI.lua
 local globalSettings = {
     UIBlurToggle = Window:GlobalSetting({
@@ -2105,20 +2076,6 @@ end)
 
 MacLib:LoadAutoLoadConfig()
 
--- Auto Hide UI khi khởi động - nếu đã bật trong config thì tự động minimize
-task.spawn(function()
-    task.wait(1) -- Đợi Window và UI load xong
-    if autoHideUIEnabled and Window then
-        pcall(function()
-            if Window.Minimize then
-                Window:Minimize()
-            elseif Window.Visible ~= nil then
-                Window.Visible = false
-            end
-        end)
-    end
-end)
-
 -- Auto save config đơn giản (5s/lần)
 task.spawn(function()
     while task.wait(5) do
@@ -2147,7 +2104,6 @@ task.spawn(function()
         end
     end
 end)
-
 
 -- Tạo icon floating để giả lập nút Left Alt cho mobile
 task.spawn(function()
