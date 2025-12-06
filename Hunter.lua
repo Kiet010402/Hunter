@@ -2054,6 +2054,18 @@ sections.SettingsMisc:Toggle({
         autoHideUIEnabled = value
         ConfigSystem.CurrentConfig.AutoHideUIEnabled = value
         ConfigSystem.SaveConfig()
+        
+        -- Nếu bật toggle, ngay lập tức minimize UI
+        if value and Window then
+            task.wait(0.1) -- Đợi một chút để đảm bảo toggle đã được xử lý
+            pcall(function()
+                if Window.Minimize then
+                    Window:Minimize()
+                elseif Window.Visible ~= nil then
+                    Window.Visible = false
+                end
+            end)
+        end
     end,
 }, "AutoHideUIToggle")
 
@@ -2093,6 +2105,20 @@ end)
 
 MacLib:LoadAutoLoadConfig()
 
+-- Auto Hide UI khi khởi động - nếu đã bật trong config thì tự động minimize
+task.spawn(function()
+    task.wait(1) -- Đợi Window và UI load xong
+    if autoHideUIEnabled and Window then
+        pcall(function()
+            if Window.Minimize then
+                Window:Minimize()
+            elseif Window.Visible ~= nil then
+                Window.Visible = false
+            end
+        end)
+    end
+end)
+
 -- Auto save config đơn giản (5s/lần)
 task.spawn(function()
     while task.wait(5) do
@@ -2122,20 +2148,6 @@ task.spawn(function()
     end
 end)
 
--- Auto Hide UI - tự động ẩn UI khi bật
-task.spawn(function()
-    while true do
-        task.wait(0.5)
-
-        if autoHideUIEnabled and Window then
-            pcall(function()
-                if Window.Visible ~= nil then
-                    Window.Visible = false
-                end
-            end)
-        end
-    end
-end)
 
 -- Tạo icon floating để giả lập nút Left Alt cho mobile
 task.spawn(function()
