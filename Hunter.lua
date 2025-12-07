@@ -141,6 +141,10 @@ local rockTypeDropdown = nil
 local conflictedRocks = {}
 local CONFLICT_COOLDOWN = 10 -- Thời gian chờ trước khi thử lại rock bị conflict (giây)
 
+-- Trạng thái bay trên trời cho Auto Mine
+local isMiningInSky = false -- Flag để biết đang bay trên trời hay đang đào
+local mineSkyPositionConnection = nil -- Connection để giữ Y cố định khi bay trên trời
+
 --// Enemy state
 local selectedEnemyType = ConfigSystem.CurrentConfig.SelectedEnemyType
 if type(selectedEnemyType) ~= "table" then
@@ -428,6 +432,67 @@ local function checkMiningConflictNotification()
     return false
 end
 
+-- Hàm bay lên trời cho Auto Mine
+local function flyToSkyForMine()
+    local player = Players.LocalPlayer
+    local character = player.Character
+    if not character then
+        return false
+    end
+
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        return false
+    end
+
+    -- Hủy connection cũ nếu có
+    if mineSkyPositionConnection then
+        mineSkyPositionConnection:Disconnect()
+        mineSkyPositionConnection = nil
+    end
+
+    -- Tele lên trời ngay lập tức (giữ X và Z, chỉ thay đổi Y)
+    local currentPos = hrp.Position
+    local skyPos = Vector3.new(currentPos.X, SKY_HEIGHT, currentPos.Z)
+    hrp.CFrame = CFrame.new(skyPos)
+    isMiningInSky = true
+
+    -- Tạo BodyVelocity để giữ Y cố định
+    local bodyVelocity = hrp:FindFirstChild("BodyVelocity")
+    if not bodyVelocity then
+        bodyVelocity = Instance.new("BodyVelocity")
+        bodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
+        bodyVelocity.Parent = hrp
+    end
+
+    -- Giữ Y cố định bằng Heartbeat connection
+    local trackedCharacter = character
+    mineSkyPositionConnection = RunService.Heartbeat:Connect(function()
+        if not autoMineEnabled
+            or not isMiningInSky
+            or Players.LocalPlayer.Character ~= trackedCharacter
+            or not hrp
+            or not hrp.Parent then
+            if mineSkyPositionConnection then
+                mineSkyPositionConnection:Disconnect()
+                mineSkyPositionConnection = nil
+            end
+            return
+        end
+
+        -- Giữ Y cố định ở SKY_HEIGHT, chỉ cho phép di chuyển X và Z
+        local currentPos = hrp.Position
+        local fixedPos = Vector3.new(currentPos.X, SKY_HEIGHT, currentPos.Z)
+        hrp.CFrame = CFrame.new(fixedPos, fixedPos + hrp.CFrame.LookVector * Vector3.new(1, 0, 1))
+        if bodyVelocity then
+            bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        end
+    end)
+
+    return true
+end
+
+-- Hàm di chuyển trên không trung đến rock (giữ Y cao, chỉ di chuyển X và Z)
 local function tweenToMineTarget(targetPart)
     local player = Players.LocalPlayer
     local character = player.Character
@@ -440,26 +505,23 @@ local function tweenToMineTarget(targetPart)
         return false
     end
 
-    -- Đứng dưới viên đá một khoảng (theo Dropdown Distance) và ngửa mặt lên
-    local downOffset = -(selectedMineDistance or 3)
-    local targetPos = targetPart.Position + Vector3.new(0, downOffset, 0)
-    local distance = (hrp.Position - targetPos).Magnitude
+    -- Vị trí trên không trung phía trên rock (giữ Y = SKY_HEIGHT, chỉ di chuyển X và Z)
+    local rockPos = targetPart.Position
+    local targetPos = Vector3.new(rockPos.X, SKY_HEIGHT, rockPos.Z)
+    local currentPos = hrp.Position
+    local distanceToTarget = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(targetPos.X, 0, targetPos.Z)).Magnitude
 
-    -- Nếu ở gần rock thì tween nhanh nhưng mượt, xa thì tween chậm giống Enemy
-    local time
-    if distance <= 100 then
-        -- Gần: vẫn nhanh nhưng không quá giật
-        time = math.clamp(distance / 20, 0.4, 4)
-    else
-        -- Xa: an toàn, chậm hơn
-        time = math.clamp(distance / 4, 2, 12)
-    end
+    -- Tính thời gian tween dựa trên khoảng cách XZ (chậm hơn vì chỉ di chuyển X và Z, không bị anti-tp)
+    -- Tốc độ: khoảng 10 studs/s để an toàn
+    local time = math.clamp(distanceToTarget / 10, 1, 8)
 
-    local lookAtPos = targetPart.Position + Vector3.new(0, 5, 0) -- nhìn chếch lên trên viên đá
+    -- Hướng về rock (nhưng vẫn ở trên trời)
+    local lookAtCFrame = CFrame.new(targetPos, targetPart.Position)
+
     local tween = TweenService:Create(
         hrp,
         TweenInfo.new(time, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
-        { CFrame = CFrame.new(targetPos, lookAtPos) }
+        { CFrame = lookAtCFrame }
     )
 
     tween:Play()
@@ -501,6 +563,19 @@ local function swingPickaxeUntilMinedType(targetPart, typeName)
 
     -- Lưu lại character hiện tại để phát hiện respawn
     local trackedCharacter = character
+
+    -- Hủy connection giữ Y trên trời
+    if mineSkyPositionConnection then
+        mineSkyPositionConnection:Disconnect()
+        mineSkyPositionConnection = nil
+    end
+
+    -- Tele xuống dưới rock ngay lập tức (giữ X và Z, chỉ thay đổi Y)
+    local downOffset = -(selectedMineDistance or 3)
+    local targetPos = targetPart.Position + Vector3.new(0, downOffset, 0)
+    local lookAtPos = targetPart.Position + Vector3.new(0, 5, 0) -- Nhìn chếch lên trên rock
+    hrp.CFrame = CFrame.new(targetPos, lookAtPos)
+    isMiningInSky = false -- Đánh dấu đã xuống đào
 
     -- Tắt xoay tự do để hạn chế game tự chỉnh hướng nhìn
     local originalAutoRotate = hrp.AssemblyAngularVelocity
@@ -576,6 +651,11 @@ local function swingPickaxeUntilMinedType(targetPart, typeName)
     end
     if hrp and hrp.Parent then
         hrp.AssemblyAngularVelocity = originalAutoRotate
+    end
+
+    -- Sau khi mine xong, bay lên trời lại ngay lập tức
+    if autoMineEnabled then
+        flyToSkyForMine()
     end
 end
 
@@ -699,6 +779,16 @@ sections.Farm:Toggle({
         if value then
             if not selectedRockType or #selectedRockType == 0 then
                 notify("Mine", "Please select a rock type!", 4)
+            else
+                -- Khi bật lên, bay lên trời ngay lập tức
+                flyToSkyForMine()
+            end
+        else
+            -- Khi tắt, reset flag và dọn dẹp connection
+            isMiningInSky = false
+            if mineSkyPositionConnection then
+                mineSkyPositionConnection:Disconnect()
+                mineSkyPositionConnection = nil
             end
         end
     end,
@@ -711,15 +801,55 @@ task.spawn(function()
             local player = Players.LocalPlayer
             local character = player.Character
             local hrp = character and character:FindFirstChild("HumanoidRootPart")
+
+            -- Đảm bảo đang bay trên trời (nếu chưa thì bay lên)
+            if hrp and not isMiningInSky then
+                flyToSkyForMine()
+                task.wait(0.2) -- Chờ một chút để đảm bảo đã bay lên
+            end
+
             if character and hrp then
-                -- Chỉ chạy Auto Mine khi nhân vật đã respawn đầy đủ
-                local target = getClosestRockPartByTypes(selectedRockType)
-                if target then
-                    tweenToMineTarget(target)
-                    -- Truyền loại đá của target vào hàm đào
-                    local model = target:FindFirstAncestorWhichIsA("Model")
+                local closestTarget = nil
+                local closestDist = math.huge
+
+                -- Tìm rock gần nhất (tính khoảng cách XZ, bỏ qua Y vì đang bay trên trời)
+                for _, typeName in ipairs(selectedRockType) do
+                    local parts = getRockPartsByType(typeName)
+                    for _, part in ipairs(parts) do
+                        if part and part.Parent then
+                            -- Skip rock nếu đang trong blacklist và chưa hết cooldown
+                            local conflictTime = conflictedRocks[part]
+                            local currentTime = tick()
+                            if conflictTime and (currentTime - conflictTime) < CONFLICT_COOLDOWN then
+                                -- Rock vẫn đang trong cooldown, skip
+                            elseif conflictTime then
+                                -- Hết cooldown, xóa khỏi blacklist
+                                conflictedRocks[part] = nil
+                            end
+
+                            -- Chỉ tính rock nếu không trong cooldown
+                            if not conflictTime or (currentTime - conflictTime) >= CONFLICT_COOLDOWN then
+                                local hrpPos = hrp.Position
+                                local rockPos = part.Position
+                                -- Tính khoảng cách XZ (bỏ qua Y)
+                                local dist = (Vector3.new(hrpPos.X, 0, hrpPos.Z) - Vector3.new(rockPos.X, 0, rockPos.Z)).Magnitude
+                                if dist < closestDist then
+                                    closestDist = dist
+                                    closestTarget = part
+                                end
+                            end
+                        end
+                    end
+                end
+
+                if closestTarget then
+                    -- Di chuyển trên không trung đến rock (giữ Y cao, chỉ di chuyển X và Z)
+                    tweenToMineTarget(closestTarget)
+                    -- Truyền loại đá của target vào hàm đào (sẽ tự tele xuống và đào)
+                    local model = closestTarget:FindFirstAncestorWhichIsA("Model")
                     local rockName = model and model.Name or nil
-                    swingPickaxeUntilMinedType(target, rockName)
+                    swingPickaxeUntilMinedType(closestTarget, rockName)
+                    -- Sau khi mine xong, swingPickaxeUntilMinedType sẽ tự động bay lên lại
                 end
             end
         end
