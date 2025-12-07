@@ -2161,7 +2161,7 @@ local function getServersList(placeId)
     return servers.data
 end
 
--- Hàm hop server với retry và hỗ trợ 2 place ID
+-- Hàm hop server chỉ trong cùng place ID
 local function hopServer()
     local placeId1 = 76558904092080
     local placeId2 = 129009554587176
@@ -2170,72 +2170,63 @@ local function hopServer()
     
     notify("Hop Server", "Đang tìm server mới...", 3)
     
-    -- Danh sách place ID để thử (ưu tiên place khác nếu đang ở place 1)
-    local placesToTry = {}
-    if currentPlaceId == placeId1 then
-        table.insert(placesToTry, placeId2)
-        table.insert(placesToTry, placeId1)
-    elseif currentPlaceId == placeId2 then
-        table.insert(placesToTry, placeId1)
-        table.insert(placesToTry, placeId2)
-    else
-        -- Nếu không phải 2 place trên, thử cả 2
-        table.insert(placesToTry, placeId1)
-        table.insert(placesToTry, placeId2)
+    -- Chỉ hop trong cùng place ID hiện tại
+    local targetPlaceId = currentPlaceId
+    
+    -- Kiểm tra xem có phải là 1 trong 2 place ID được hỗ trợ không
+    if currentPlaceId ~= placeId1 and currentPlaceId ~= placeId2 then
+        notify("Hop Server", "Place ID không được hỗ trợ!", 3)
+        return
     end
     
-    -- Thử từng place ID
-    for _, targetPlaceId in ipairs(placesToTry) do
-        local servers = getServersList(targetPlaceId)
-        if not servers or #servers == 0 then
-            -- Bỏ qua place này, thử place tiếp theo
-        else
-            -- Sắp xếp servers theo số người chơi (ít nhất trước)
-            table.sort(servers, function(a, b)
-                local aPlaying = a.playing or 0
-                local bPlaying = b.playing or 0
-                return aPlaying < bPlaying
-            end)
-            
-            -- Thử teleport đến các server, ưu tiên server có ít người và còn chỗ
-            for _, server in ipairs(servers) do
-                -- Bỏ qua server hiện tại nếu cùng place
-                if not (targetPlaceId == currentPlaceId and server.id == currentJobId) then
-                    -- Ưu tiên server có chỗ trống
-                    if server.playing and server.maxPlayers and server.playing < server.maxPlayers then
-                        local success, err = pcall(function()
-                            TeleportService:TeleportToPlaceInstance(targetPlaceId, server.id, Players.LocalPlayer)
-                        end)
-                        if success then
-                            notify("Hop Server", "Đang teleport đến server mới...", 3)
-                            return
-                        end
-                    end
-                end
-            end
-            
-            -- Nếu không tìm thấy server có chỗ, thử server bất kỳ (có thể full nhưng vẫn thử)
-            for _, server in ipairs(servers) do
-                if not (targetPlaceId == currentPlaceId and server.id == currentJobId) then
-                    local success, err = pcall(function()
-                        TeleportService:TeleportToPlaceInstance(targetPlaceId, server.id, Players.LocalPlayer)
-                    end)
-                    if success then
-                        notify("Hop Server", "Đang teleport đến server mới...", 3)
-                        return
-                    end
+    local servers = getServersList(targetPlaceId)
+    if not servers or #servers == 0 then
+        notify("Hop Server", "Không tìm thấy server nào!", 3)
+        return
+    end
+    
+    -- Sắp xếp servers theo số người chơi (ít nhất trước)
+    table.sort(servers, function(a, b)
+        local aPlaying = a.playing or 0
+        local bPlaying = b.playing or 0
+        return aPlaying < bPlaying
+    end)
+    
+    -- Thử teleport đến các server, ưu tiên server có ít người và còn chỗ
+    for _, server in ipairs(servers) do
+        -- Bỏ qua server hiện tại
+        if server.id ~= currentJobId then
+            -- Ưu tiên server có chỗ trống
+            if server.playing and server.maxPlayers and server.playing < server.maxPlayers then
+                local success, err = pcall(function()
+                    TeleportService:TeleportToPlaceInstance(targetPlaceId, server.id, Players.LocalPlayer)
+                end)
+                if success then
+                    notify("Hop Server", "Đang teleport đến server mới...", 3)
+                    return
                 end
             end
         end
     end
     
-    -- Fallback: dùng TeleportService:Teleport() để teleport đến place khác
-    notify("Hop Server", "Đang thử teleport đến place khác...", 3)
-    task.wait(0.5)
+    -- Nếu không tìm thấy server có chỗ, thử server bất kỳ (có thể full nhưng vẫn thử)
+    for _, server in ipairs(servers) do
+        if server.id ~= currentJobId then
+            local success, err = pcall(function()
+                TeleportService:TeleportToPlaceInstance(targetPlaceId, server.id, Players.LocalPlayer)
+            end)
+            if success then
+                notify("Hop Server", "Đang teleport đến server mới...", 3)
+                return
+            end
+        end
+    end
     
-    local targetPlace = (currentPlaceId == placeId1) and placeId2 or placeId1
+    -- Fallback: dùng TeleportService:Teleport() để teleport đến cùng place
+    notify("Hop Server", "Không tìm thấy server phù hợp. Đang thử lại...", 3)
+    task.wait(0.5)
     pcall(function()
-        TeleportService:Teleport(targetPlace, Players.LocalPlayer)
+        TeleportService:Teleport(targetPlaceId, Players.LocalPlayer)
     end)
 end
 
