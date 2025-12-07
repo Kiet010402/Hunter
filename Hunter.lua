@@ -42,11 +42,13 @@ ConfigSystem.DefaultConfig = {
     SelectedDistance = 6,
     AutoFarmEnemyEnabled = false,
     SelectedMineDistance = 6,
-    SelectedPotionName = nil,
+    SelectedPotionName = {},
     AutoBuyAndUsePotionEnabled = false,
     SelectedItemName = nil,
     AutoSellItemEnabled = false,
     AntiAFKEnabled = true,
+    ESPRockEnabled = false,
+    ESPEnemyEnabled = false,
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -142,7 +144,7 @@ local conflictedRocks = {}
 local CONFLICT_COOLDOWN = 10 -- Thời gian chờ trước khi thử lại rock bị conflict (giây)
 
 -- Trạng thái bay trên trời cho Auto Mine
-local isMiningInSky = false -- Flag để biết đang bay trên trời hay đang đào
+local isMiningInSky = false           -- Flag để biết đang bay trên trời hay đang đào
 local mineSkyPositionConnection = nil -- Connection để giữ Y cố định khi bay trên trời
 
 --// Enemy state
@@ -167,17 +169,32 @@ end
 local enemyTypes = {}
 local enemyTypeDropdown = nil
 
+-- ESP state
+local espRockEnabled = ConfigSystem.CurrentConfig.ESPRockEnabled
+if type(espRockEnabled) ~= "boolean" then
+    espRockEnabled = ConfigSystem.DefaultConfig.ESPRockEnabled
+end
+local espEnemyEnabled = ConfigSystem.CurrentConfig.ESPEnemyEnabled
+if type(espEnemyEnabled) ~= "boolean" then
+    espEnemyEnabled = ConfigSystem.DefaultConfig.ESPEnemyEnabled
+end
+local rockESPGuis = {}  -- Lưu các BillboardGui của rock ESP
+local enemyESPGuis = {} -- Lưu các BillboardGui của enemy ESP
+
 -- Độ cao trên trời để bay (Y coordinate)
 local SKY_HEIGHT = 300
-local isFlyingInSky = false -- Flag để biết đang bay trên trời hay đang đánh quái
+local isFlyingInSky = false       -- Flag để biết đang bay trên trời hay đang đánh quái
 local skyPositionConnection = nil -- Connection để giữ Y cố định khi bay trên trời
 
 --// Shop Potion state
 local potionNames = {}
 local potionDropdown = nil
 local selectedPotionName = ConfigSystem.CurrentConfig.SelectedPotionName
-if selectedPotionName ~= nil and type(selectedPotionName) ~= "string" then
-    selectedPotionName = nil
+if type(selectedPotionName) == "string" then
+    -- Convert string cũ thành array
+    selectedPotionName = { selectedPotionName }
+elseif type(selectedPotionName) ~= "table" then
+    selectedPotionName = {}
 end
 local autoBuyAndUsePotionEnabled = ConfigSystem.CurrentConfig.AutoBuyAndUsePotionEnabled
 if type(autoBuyAndUsePotionEnabled) ~= "boolean" then
@@ -320,6 +337,55 @@ local function getClosestRockPartByType(typeName)
     end
 
     return closestPart
+end
+
+-- Hàm check xem còn rock nào không (bỏ qua blacklist)
+local function hasAnyRockAvailable(rockTypeList)
+    if not rockTypeList or #rockTypeList == 0 then
+        return false
+    end
+
+    local player = Players.LocalPlayer
+    local character = player.Character
+    if not character then
+        return false
+    end
+
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        return false
+    end
+
+    -- Nếu rockTypeList chứa "All", dùng tất cả rockTypes
+    local effectiveTypes = rockTypeList
+    local hasAll = false
+    for _, typeName in ipairs(rockTypeList) do
+        if typeName == "All" then
+            hasAll = true
+            break
+        end
+    end
+    if hasAll then
+        effectiveTypes = rockTypes
+    end
+
+    local currentTime = tick()
+
+    for _, typeName in ipairs(effectiveTypes) do
+        local parts = getRockPartsByType(typeName)
+        for _, part in ipairs(parts) do
+            if part and part.Parent then
+                -- Skip rock nếu đang trong blacklist và chưa hết cooldown
+                local conflictTime = conflictedRocks[part]
+                if not conflictTime or (currentTime - conflictTime) >= CONFLICT_COOLDOWN then
+                    -- Có ít nhất 1 rock available
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
 end
 
 -- Lấy viên đá gần nhất trong danh sách nhiều loại đá được chọn
@@ -511,11 +577,12 @@ local function tweenToMineTarget(targetPart)
     local rockPos = targetPart.Position
     local targetPos = Vector3.new(rockPos.X, SKY_HEIGHT, rockPos.Z)
     local currentPos = hrp.Position
-    local distanceToTarget = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(targetPos.X, 0, targetPos.Z)).Magnitude
+    local distanceToTarget = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(targetPos.X, 0, targetPos.Z))
+        .Magnitude
 
     -- Tính thời gian tween dựa trên khoảng cách XZ (chậm hơn vì chỉ di chuyển X và Z, không bị anti-tp)
-    -- Tốc độ: khoảng 10 studs/s để an toàn
-    local time = math.clamp(distanceToTarget / 10, 1, 8)
+    -- Tốc độ: khoảng 8 studs/s để an toàn
+    local time = math.clamp(distanceToTarget / 8, 3, 10) --Tween của Auto Farm Rock
 
     -- Hướng về rock (nhưng vẫn ở trên trời)
     local lookAtCFrame = CFrame.new(targetPos, targetPart.Position)
@@ -577,7 +644,14 @@ local function swingPickaxeUntilMinedType(targetPart, typeName)
     local targetPos = targetPart.Position + Vector3.new(0, downOffset, 0)
     local lookAtPos = targetPart.Position + Vector3.new(0, 5, 0) -- Nhìn chếch lên trên rock
     hrp.CFrame = CFrame.new(targetPos, lookAtPos)
-    isMiningInSky = false -- Đánh dấu đã xuống đào
+    isMiningInSky = false                                        -- Đánh dấu đã xuống đào
+
+    -- Chuyển camera sang View Player của rock (set CameraSubject là rock part)
+    local camera = workspace.CurrentCamera
+    local originalCameraSubject = camera.CameraSubject
+    if targetPart and targetPart.Parent then
+        camera.CameraSubject = targetPart
+    end
 
     -- Tắt xoay tự do để hạn chế game tự chỉnh hướng nhìn
     local originalAutoRotate = hrp.AssemblyAngularVelocity
@@ -604,6 +678,11 @@ local function swingPickaxeUntilMinedType(targetPart, typeName)
             or isAutoBuyAndUseActive then
             if keepPositionConnection then
                 keepPositionConnection:Disconnect()
+            end
+            -- Khôi phục camera về player khi dừng
+            local camera = workspace.CurrentCamera
+            if camera and originalCameraSubject then
+                camera.CameraSubject = originalCameraSubject
             end
             return
         end
@@ -653,6 +732,12 @@ local function swingPickaxeUntilMinedType(targetPart, typeName)
     end
     if hrp and hrp.Parent then
         hrp.AssemblyAngularVelocity = originalAutoRotate
+    end
+
+    -- Khôi phục camera về player
+    local camera = workspace.CurrentCamera
+    if camera and originalCameraSubject then
+        camera.CameraSubject = originalCameraSubject
     end
 
     -- Sau khi mine xong, bay lên trời lại ngay lập tức
@@ -834,7 +919,8 @@ task.spawn(function()
                                 local hrpPos = hrp.Position
                                 local rockPos = part.Position
                                 -- Tính khoảng cách XZ (bỏ qua Y)
-                                local dist = (Vector3.new(hrpPos.X, 0, hrpPos.Z) - Vector3.new(rockPos.X, 0, rockPos.Z)).Magnitude
+                                local dist = (Vector3.new(hrpPos.X, 0, hrpPos.Z) - Vector3.new(rockPos.X, 0, rockPos.Z))
+                                    .Magnitude
                                 if dist < closestDist then
                                     closestDist = dist
                                     closestTarget = part
@@ -1136,11 +1222,11 @@ local function tweenToEnemyInSky(enemyModel)
     local targetPos = Vector3.new(enemyPos.X, SKY_HEIGHT, enemyPos.Z)
     local currentPos = hrp.Position
     local distanceToTarget = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(targetPos.X, 0, targetPos.Z))
-    .Magnitude
+        .Magnitude
 
     -- Tính thời gian tween dựa trên khoảng cách XZ (chậm hơn vì chỉ di chuyển X và Z, không bị anti-tp)
     -- Tốc độ: khoảng 8 studs/s để an toàn
-    local time = math.clamp(distanceToTarget / 10, 1, 8)
+    local time = math.clamp(distanceToTarget / 8, 3, 10) --Tween của Auto Farm Enemy
 
     -- Hướng về enemy (nhưng vẫn ở trên trời)
     local lookAtCFrame = CFrame.new(targetPos, enemyRootPart.Position)
@@ -1211,7 +1297,15 @@ local function swingWeaponUntilEnemyDead(enemyModel, typeName)
     local targetPos = enemyRootPart.Position + Vector3.new(0, -selectedDistance, 0)
     local lookAtPos = enemyRootPart.Position + Vector3.new(0, 5, 0) -- Nhìn chếch lên trên enemy
     hrp.CFrame = CFrame.new(targetPos, lookAtPos)
-    isFlyingInSky = false -- Đánh dấu đã xuống đánh quái
+    isFlyingInSky = false                                           -- Đánh dấu đã xuống đánh quái
+
+    -- Chuyển camera sang View Player của enemy
+    local camera = workspace.CurrentCamera
+    local originalCameraSubject = camera.CameraSubject
+    local enemyHumanoid = enemyModel:FindFirstChildOfClass("Humanoid")
+    if enemyHumanoid then
+        camera.CameraSubject = enemyHumanoid
+    end
 
     -- Tắt AutoRotate để tránh game tự động xoay nhân vật
     local originalAutoRotate = hrp.AssemblyAngularVelocity
@@ -1240,6 +1334,11 @@ local function swingWeaponUntilEnemyDead(enemyModel, typeName)
             or isAutoBuyAndUseActive then
             if keepPositionConnection then
                 keepPositionConnection:Disconnect()
+            end
+            -- Khôi phục camera về player khi dừng
+            local camera = workspace.CurrentCamera
+            if camera and originalCameraSubject then
+                camera.CameraSubject = originalCameraSubject
             end
             return
         end
@@ -1294,6 +1393,12 @@ local function swingWeaponUntilEnemyDead(enemyModel, typeName)
     -- Khôi phục AutoRotate
     if hrp and hrp.Parent then
         hrp.AssemblyAngularVelocity = originalAutoRotate
+    end
+
+    -- Khôi phục camera về player
+    local camera = workspace.CurrentCamera
+    if camera and originalCameraSubject then
+        camera.CameraSubject = originalCameraSubject
     end
 
     -- Sau khi enemy chết, bay lên trời lại ngay lập tức
@@ -1445,7 +1550,14 @@ sections.Enemy:Toggle({
 task.spawn(function()
     while true do
         -- Nếu Auto Buy And Use đang hoạt động, tạm dừng Auto Farm Enemy
-        if autoFarmEnemyEnabled and selectedEnemyType and #selectedEnemyType > 0 and not isAutoBuyAndUseActive then
+        -- Nếu Auto Mine đang bật và còn rock, ưu tiên Auto Mine (tạm dừng Auto Farm Enemy)
+        local shouldRunEnemy = autoFarmEnemyEnabled
+            and selectedEnemyType
+            and #selectedEnemyType > 0
+            and not isAutoBuyAndUseActive
+            and (not autoMineEnabled or not selectedRockType or #selectedRockType == 0 or not hasAnyRockAvailable(selectedRockType))
+
+        if shouldRunEnemy then
             local player = Players.LocalPlayer
             local character = player.Character
             local hrp = character and character:FindFirstChild("HumanoidRootPart")
@@ -1484,7 +1596,7 @@ task.spawn(function()
                             local hrpPos = hrp.Position
                             local enemyPos = rootPart.Position
                             local dist = (Vector3.new(hrpPos.X, 0, hrpPos.Z) - Vector3.new(enemyPos.X, 0, enemyPos.Z))
-                            .Magnitude
+                                .Magnitude
                             if dist < closestDist then
                                 closestDist = dist
                                 closestTarget = target
@@ -1548,7 +1660,7 @@ local function tweenToMaria()
     end
     local distance = (hrp.Position - targetPos).Magnitude
     -- Tween chậm hơn để hạn chế dịch chuyển gấp
-    local time = math.clamp(distance / 8, 1.2, 12)
+    local time = math.clamp(distance / 5, 3, 12) --Tween của Auto Buy And Use Potion
 
     -- Hướng nhìn giữ nguyên hướng hiện tại theo trục Y
     local lookAtCFrame = CFrame.new(targetPos, targetPos + (hrp.CFrame.LookVector * Vector3.new(1, 0, 1)))
@@ -1596,26 +1708,27 @@ potionNames = scanPotionModels()
 
 potionDropdown = sections.ShopPotion:Dropdown({
     Name = "Select Potion",
-    Multi = false,
+    Multi = true,
     Required = false,
     Options = potionNames,
     Default = selectedPotionName,
     Callback = function(value)
         if typeof(value) == "table" then
+            selectedPotionName = {}
             for name, state in pairs(value) do
                 if state then
-                    value = name
-                    break
+                    table.insert(selectedPotionName, name)
                 end
             end
+        else
+            selectedPotionName = {}
         end
 
-        if not value or value == "" then
-            selectedPotionName = nil
-            ConfigSystem.CurrentConfig.SelectedPotionName = nil
+        if not selectedPotionName or #selectedPotionName == 0 then
+            selectedPotionName = {}
+            ConfigSystem.CurrentConfig.SelectedPotionName = {}
         else
-            selectedPotionName = value
-            ConfigSystem.CurrentConfig.SelectedPotionName = value
+            ConfigSystem.CurrentConfig.SelectedPotionName = selectedPotionName
         end
 
         ConfigSystem.SaveConfig()
@@ -1623,7 +1736,7 @@ potionDropdown = sections.ShopPotion:Dropdown({
 }, "SelectPotionDropdown")
 
 -- Đảm bảo hiển thị lại lựa chọn potion đã lưu khi mở script
-if selectedPotionName and potionDropdown and potionDropdown.UpdateSelection then
+if selectedPotionName and #selectedPotionName > 0 and potionDropdown and potionDropdown.UpdateSelection then
     potionDropdown:UpdateSelection(selectedPotionName)
 end
 
@@ -1639,7 +1752,7 @@ sections.ShopPotion:Button({
             if potionDropdown.InsertOptions then
                 potionDropdown:InsertOptions(list)
             end
-            if selectedPotionName and potionDropdown.UpdateSelection then
+            if selectedPotionName and #selectedPotionName > 0 and potionDropdown.UpdateSelection then
                 potionDropdown:UpdateSelection(selectedPotionName)
             end
         end
@@ -1656,7 +1769,7 @@ sections.ShopPotion:Toggle({
         ConfigSystem.CurrentConfig.AutoBuyAndUsePotionEnabled = value
         ConfigSystem.SaveConfig()
         if value then
-            if not selectedPotionName then
+            if not selectedPotionName or #selectedPotionName == 0 then
                 notify("Shop Potion", "Chưa chọn potion!", 3)
             end
         end
@@ -1731,7 +1844,7 @@ task.spawn(function()
         task.wait(0.5)
 
         -- Nếu toggle tắt hoặc chưa chọn potion thì đảm bảo flag cũng tắt và bỏ qua
-        if not autoBuyAndUsePotionEnabled or not selectedPotionName then
+        if not autoBuyAndUsePotionEnabled or not selectedPotionName or #selectedPotionName == 0 then
             isAutoBuyAndUseActive = false
             -- Ngắt các connection giữ Y trên trời của Auto Mine và Auto Farm Enemy
             if mineSkyPositionConnection then
@@ -1783,26 +1896,33 @@ task.spawn(function()
             end
 
             if autoBuyAndUsePotionEnabled and canAfford then
-                local hasPotion = backpack and backpack:FindFirstChild(selectedPotionName)
-                if hasPotion then
-                    -- Nếu toggle đã tắt giữa chừng thì dừng ngay
-                    if autoBuyAndUsePotionEnabled then
+                -- Xử lý từng potion đã chọn
+                for _, potionName in ipairs(selectedPotionName) do
+                    if not autoBuyAndUsePotionEnabled then
+                        break -- Nếu toggle tắt giữa chừng thì dừng
+                    end
+
+                    local hasPotion = backpack and backpack:FindFirstChild(potionName)
+                    if hasPotion then
+                        -- Nếu có potion trong Backpack thì use ngay
                         pcall(function()
-                            local args = { selectedPotionName }
+                            local args = { potionName }
                             toolRF:InvokeServer(unpack(args))
                         end)
-                    end
-                else
-                    -- Bước 2: Nếu không có potion trong Backpack, check Perks xem có effect không
-                    local hasPotionEffect = hasPotionInPerks(selectedPotionName)
-                    if not hasPotionEffect and autoBuyAndUsePotionEnabled then
-                        -- Không có effect => đã hết potion => đi mua
-                        local ok = tweenToMaria()
-                        if ok and autoBuyAndUsePotionEnabled then
-                            pcall(function()
-                                local args = { selectedPotionName, 3 }
-                                ProximityPurchaseRF:InvokeServer(unpack(args))
-                            end)
+                    else
+                        -- Nếu không có potion trong Backpack, check Perks xem có effect không
+                        local hasPotionEffect = hasPotionInPerks(potionName)
+                        if not hasPotionEffect and autoBuyAndUsePotionEnabled then
+                            -- Không có effect => đã hết potion => đi mua
+                            local ok = tweenToMaria()
+                            if ok and autoBuyAndUsePotionEnabled then
+                                pcall(function()
+                                    local args = { potionName, 3 }
+                                    ProximityPurchaseRF:InvokeServer(unpack(args))
+                                end)
+                                -- Chờ một chút sau khi mua để đảm bảo potion đã được thêm vào backpack
+                                task.wait(1)
+                            end
                         end
                     end
                 end
@@ -2375,6 +2495,250 @@ sections.SettingsInfo:SubLabel({
     Text = "Shortcut: Left Alt (or mobile icon) to hide/show UI"
 })
 
+--// ESP Functions
+local function createESPGui(target, name, distance)
+    -- Tìm hoặc tạo BillboardGui
+    local billboard = target:FindFirstChild("ESPBillboard")
+    if not billboard then
+        billboard = Instance.new("BillboardGui")
+        billboard.Name = "ESPBillboard"
+        billboard.Size = UDim2.new(0, 200, 0, 50)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+        billboard.AlwaysOnTop = true
+        billboard.Adornee = target
+        billboard.Parent = target
+
+        local textLabel = Instance.new("TextLabel")
+        textLabel.Name = "ESPLabel"
+        textLabel.Size = UDim2.new(1, 0, 1, 0)
+        textLabel.BackgroundTransparency = 1
+        textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        textLabel.TextStrokeTransparency = 0.5
+        textLabel.TextSize = 14
+        textLabel.Font = Enum.Font.GothamBold
+        textLabel.Parent = billboard
+    end
+
+    local textLabel = billboard:FindFirstChild("ESPLabel")
+    if textLabel then
+        local distanceText = string.format("%.1f", distance) .. " studs"
+        textLabel.Text = name .. "\n" .. distanceText
+    end
+
+    return billboard
+end
+
+local function updateRockESP()
+    if not espRockEnabled then
+        return
+    end
+
+    -- Nếu chưa chọn rock type nào thì không hiển thị ESP
+    if not selectedRockType or #selectedRockType == 0 then
+        -- Xóa tất cả ESP
+        for rockPart, gui in pairs(rockESPGuis) do
+            if gui and gui.Parent then
+                gui:Destroy()
+            end
+        end
+        rockESPGuis = {}
+        return
+    end
+
+    local player = Players.LocalPlayer
+    local character = player.Character
+    if not character then
+        return
+    end
+
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        return
+    end
+
+    -- Tạo set các rock type đã chọn để check nhanh
+    local selectedRockSet = {}
+    local hasAll = false
+    for _, typeName in ipairs(selectedRockType) do
+        if typeName == "All" then
+            hasAll = true
+            break
+        end
+        selectedRockSet[typeName] = true
+    end
+
+    -- Tìm tất cả rock trong workspace, chỉ lấy những rock đã chọn
+    local rocksRoot = workspace:FindFirstChild("Rocks")
+    if not rocksRoot then
+        return
+    end
+
+    local currentRocks = {}
+    for _, inst in ipairs(rocksRoot:GetDescendants()) do
+        if inst:IsA("BasePart") and inst.Parent then
+            local model = inst:FindFirstAncestorWhichIsA("Model")
+            if model and model.Name ~= "" then
+                -- Chỉ thêm rock nếu đã chọn trong dropdown
+                if hasAll or selectedRockSet[model.Name] then
+                    currentRocks[inst] = model.Name
+                end
+            end
+        end
+    end
+
+    -- Xóa ESP của rock không còn tồn tại hoặc không được chọn
+    for rockPart, gui in pairs(rockESPGuis) do
+        if not currentRocks[rockPart] or not rockPart.Parent then
+            if gui and gui.Parent then
+                gui:Destroy()
+            end
+            rockESPGuis[rockPart] = nil
+        end
+    end
+
+    -- Tạo hoặc update ESP cho rock hiện tại (chỉ những rock đã chọn)
+    for rockPart, rockName in pairs(currentRocks) do
+        local distance = (hrp.Position - rockPart.Position).Magnitude
+        local espGui = rockESPGuis[rockPart]
+        if not espGui or not espGui.Parent then
+            espGui = createESPGui(rockPart, rockName, distance)
+            rockESPGuis[rockPart] = espGui
+        else
+            -- Update text
+            local textLabel = espGui:FindFirstChild("ESPLabel")
+            if textLabel then
+                local distanceText = string.format("%.1f", distance) .. " studs"
+                textLabel.Text = rockName .. "\n" .. distanceText
+            end
+        end
+    end
+end
+
+local function updateEnemyESP()
+    if not espEnemyEnabled then
+        return
+    end
+
+    -- Nếu chưa chọn enemy type nào thì không hiển thị ESP
+    if not selectedEnemyType or #selectedEnemyType == 0 then
+        -- Xóa tất cả ESP
+        for enemyModel, gui in pairs(enemyESPGuis) do
+            if gui and gui.Parent then
+                gui:Destroy()
+            end
+        end
+        enemyESPGuis = {}
+        return
+    end
+
+    local player = Players.LocalPlayer
+    local character = player.Character
+    if not character then
+        return
+    end
+
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        return
+    end
+
+    -- Tạo set các enemy type đã chọn để check nhanh
+    local selectedEnemySet = {}
+    local hasAll = false
+    for _, typeName in ipairs(selectedEnemyType) do
+        if typeName == "All" then
+            hasAll = true
+            break
+        end
+        selectedEnemySet[typeName] = true
+    end
+
+    -- Tìm tất cả enemy trong workspace.Living, chỉ lấy những enemy đã chọn
+    local livingRoot = workspace:FindFirstChild("Living")
+    if not livingRoot then
+        return
+    end
+
+    local currentEnemies = {}
+    for _, child in ipairs(livingRoot:GetChildren()) do
+        if child:IsA("Model") and child.Name ~= "Model" then
+            -- Bỏ qua enemy chết
+            if not isEnemyDead(child) then
+                local rootPart = child:FindFirstChild("HumanoidRootPart") or child.PrimaryPart or
+                    child:FindFirstChildWhichIsA("BasePart", true)
+                if rootPart then
+                    local enemyName = extractEnemyTypeName(child.Name) or child.Name
+                    -- Chỉ thêm enemy nếu đã chọn trong dropdown
+                    if hasAll or selectedEnemySet[enemyName] then
+                        currentEnemies[child] = { rootPart = rootPart, name = enemyName }
+                    end
+                end
+            end
+        end
+    end
+
+    -- Xóa ESP của enemy không còn tồn tại, đã chết hoặc không được chọn
+    for enemyModel, gui in pairs(enemyESPGuis) do
+        if not currentEnemies[enemyModel] or not enemyModel.Parent or isEnemyDead(enemyModel) then
+            if gui and gui.Parent then
+                gui:Destroy()
+            end
+            enemyESPGuis[enemyModel] = nil
+        end
+    end
+
+    -- Tạo hoặc update ESP cho enemy hiện tại (chỉ những enemy đã chọn)
+    for enemyModel, enemyData in pairs(currentEnemies) do
+        local rootPart = enemyData.rootPart
+        local enemyName = enemyData.name
+        local distance = (hrp.Position - rootPart.Position).Magnitude
+        local espGui = enemyESPGuis[enemyModel]
+        if not espGui or not espGui.Parent then
+            espGui = createESPGui(rootPart, enemyName, distance)
+            enemyESPGuis[enemyModel] = espGui
+        else
+            -- Update text và đảm bảo Adornee đúng
+            if espGui.Adornee ~= rootPart then
+                espGui.Adornee = rootPart
+            end
+            local textLabel = espGui:FindFirstChild("ESPLabel")
+            if textLabel then
+                local distanceText = string.format("%.1f", distance) .. " studs"
+                textLabel.Text = enemyName .. "\n" .. distanceText
+            end
+        end
+    end
+end
+
+-- Vòng lặp update ESP
+task.spawn(function()
+    while task.wait(0.1) do
+        if espRockEnabled then
+            updateRockESP()
+        else
+            -- Nếu tắt ESP, xóa tất cả
+            for rockPart, gui in pairs(rockESPGuis) do
+                if gui and gui.Parent then
+                    gui:Destroy()
+                end
+            end
+            rockESPGuis = {}
+        end
+
+        if espEnemyEnabled then
+            updateEnemyESP()
+        else
+            -- Nếu tắt ESP, xóa tất cả
+            for enemyModel, gui in pairs(enemyESPGuis) do
+                if gui and gui.Parent then
+                    gui:Destroy()
+                end
+            end
+            enemyESPGuis = {}
+        end
+    end
+end)
+
 --// SETTINGS MISC TAB
 sections.SettingsMisc:Header({ Name = "Misc" })
 
@@ -2388,6 +2752,48 @@ sections.SettingsMisc:Toggle({
         notify("Anti AFK", (value and "Enabled" or "Disabled") .. " Anti AFK", 3)
     end,
 }, "AntiAFKToggle")
+
+sections.SettingsMisc:Toggle({
+    Name = "ESP Rock",
+    Default = espRockEnabled,
+    Callback = function(value)
+        espRockEnabled = value
+        ConfigSystem.CurrentConfig.ESPRockEnabled = value
+        ConfigSystem.SaveConfig()
+        notify("ESP Rock", (value and "Enabled" or "Disabled") .. " ESP Rock", 3)
+
+        -- Nếu tắt, xóa tất cả ESP
+        if not value then
+            for rockPart, gui in pairs(rockESPGuis) do
+                if gui and gui.Parent then
+                    gui:Destroy()
+                end
+            end
+            rockESPGuis = {}
+        end
+    end,
+}, "ESPRockToggle")
+
+sections.SettingsMisc:Toggle({
+    Name = "ESP Enemy",
+    Default = espEnemyEnabled,
+    Callback = function(value)
+        espEnemyEnabled = value
+        ConfigSystem.CurrentConfig.ESPEnemyEnabled = value
+        ConfigSystem.SaveConfig()
+        notify("ESP Enemy", (value and "Enabled" or "Disabled") .. " ESP Enemy", 3)
+
+        -- Nếu tắt, xóa tất cả ESP
+        if not value then
+            for enemyModel, gui in pairs(enemyESPGuis) do
+                if gui and gui.Parent then
+                    gui:Destroy()
+                end
+            end
+            enemyESPGuis = {}
+        end
+    end,
+}, "ESPEnemyToggle")
 
 -- Global settings giống style UI.lua
 local globalSettings = {
