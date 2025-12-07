@@ -4,6 +4,7 @@ local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TeleportService = game:GetService("TeleportService")
 
 -- Check Game ID
 if game.GameId ~= 7671049560 then
@@ -2131,6 +2132,76 @@ sections.SettingsMisc:Toggle({
         notify("Anti AFK", (value and "Enabled" or "Disabled") .. " Anti AFK", 3)
     end,
 }, "AntiAFKToggle")
+
+-- Hàm hop server
+local function hopServer()
+    local placeId = game.PlaceId
+    local currentJobId = game.JobId
+
+    notify("Hop Server", "Đang tìm server mới...", 3)
+
+    local success, result = pcall(function()
+        -- Lấy danh sách servers (thử nhiều cách)
+        local serversData = nil
+
+        -- Thử dùng game:HttpGet (phổ biến trong các executor)
+        if game.HttpGet then
+            serversData = game:HttpGet("https://games.roblox.com/v1/games/" ..
+            placeId .. "/servers/Public?sortOrder=Asc&limit=100")
+        elseif HttpService.GetAsync then
+            serversData = HttpService:GetAsync("https://games.roblox.com/v1/games/" ..
+            placeId .. "/servers/Public?sortOrder=Asc&limit=100")
+        elseif game.HttpGetAsync then
+            serversData = game:HttpGetAsync("https://games.roblox.com/v1/games/" ..
+            placeId .. "/servers/Public?sortOrder=Asc&limit=100")
+        end
+
+        if not serversData then
+            return false
+        end
+
+        local servers = HttpService:JSONDecode(serversData)
+
+        if not servers or not servers.data or #servers.data == 0 then
+            return false
+        end
+
+        -- Tìm server khác server hiện tại
+        for _, server in ipairs(servers.data) do
+            if server.id ~= currentJobId and server.playing and server.playing < server.maxPlayers then
+                -- Teleport đến server này
+                TeleportService:TeleportToPlaceInstance(placeId, server.id, Players.LocalPlayer)
+                return true
+            end
+        end
+
+        -- Nếu không tìm thấy server phù hợp, thử server đầu tiên khác server hiện tại
+        for _, server in ipairs(servers.data) do
+            if server.id ~= currentJobId then
+                TeleportService:TeleportToPlaceInstance(placeId, server.id, Players.LocalPlayer)
+                return true
+            end
+        end
+
+        return false
+    end)
+
+    if not success or not result then
+        notify("Hop Server", "Không tìm thấy server mới. Đang thử lại...", 3)
+        -- Fallback: dùng TeleportService:Teleport() để teleport đến cùng game
+        task.wait(1)
+        pcall(function()
+            TeleportService:Teleport(placeId, Players.LocalPlayer)
+        end)
+    end
+end
+
+sections.SettingsMisc:Button({
+    Name = "Hop Server",
+    Callback = function()
+        hopServer()
+    end,
+}, "HopServerButton")
 
 -- Global settings giống style UI.lua
 local globalSettings = {
