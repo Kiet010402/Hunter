@@ -357,6 +357,51 @@ local function getClosestRockPartByTypes(typeList)
     return closestPart
 end
 
+-- Hàm check notification "Someone else is already mining this rock."
+local function checkMiningConflictNotification()
+    local player = Players.LocalPlayer
+    if not player then
+        return false
+    end
+
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if not playerGui then
+        return false
+    end
+
+    local notifications = playerGui:FindFirstChild("Notifications")
+    if not notifications then
+        return false
+    end
+
+    local screen = notifications:FindFirstChild("Screen")
+    if not screen then
+        return false
+    end
+
+    local notificationsFrame = screen:FindFirstChild("NotificationsFrame")
+    if not notificationsFrame then
+        return false
+    end
+
+    -- Check tất cả TextFrame trong NotificationsFrame
+    for _, child in ipairs(notificationsFrame:GetChildren()) do
+        if child:IsA("Frame") and child.Name == "TextFrame" then
+            -- Tìm TextLabel trong TextFrame (có thể ở cấp con trực tiếp hoặc sâu hơn)
+            local textLabel = child:FindFirstChild("TextLabel", true)
+            if textLabel and textLabel:IsA("TextLabel") then
+                local text = textLabel.Text or ""
+                -- Check nếu text chứa thông báo conflict (case-insensitive)
+                if text:lower():find("someone else is already mining this rock.", 1, true) then
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
+end
+
 local function tweenToMineTarget(targetPart)
     local player = Players.LocalPlayer
     local character = player.Character
@@ -478,6 +523,11 @@ local function swingPickaxeUntilMinedType(targetPart, typeName)
             break
         end
         if not model or not model.Parent then
+            break
+        end
+
+        -- Check notification conflict - nếu có người khác đang mine thì chuyển rock khác ngay
+        if checkMiningConflictNotification() then
             break
         end
 
