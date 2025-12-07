@@ -164,7 +164,7 @@ local enemyTypes = {}
 local enemyTypeDropdown = nil
 
 -- Độ cao trên trời để bay (Y coordinate)
-local SKY_HEIGHT = 100
+local SKY_HEIGHT = 300
 local isFlyingInSky = false -- Flag để biết đang bay trên trời hay đang đánh quái
 
 --// Shop Potion state
@@ -912,7 +912,7 @@ end
 
 local currentTween = nil
 
--- Hàm bay lên trời ngay lập tức
+-- Hàm bay lên trời (dùng tween để camera mượt hơn)
 local function flyToSky()
     local player = Players.LocalPlayer
     local character = player.Character
@@ -925,10 +925,27 @@ local function flyToSky()
         return false
     end
 
-    -- Tele lên trời ngay lập tức (giữ X và Z, chỉ thay đổi Y)
+    -- Hủy tween cũ nếu còn chạy
+    if currentTween then
+        pcall(function() currentTween:Cancel() end)
+    end
+
+    -- Tween lên trời (giữ X và Z, chỉ thay đổi Y) để camera mượt hơn
     local currentPos = hrp.Position
     local skyPos = Vector3.new(currentPos.X, SKY_HEIGHT, currentPos.Z)
-    hrp.CFrame = CFrame.new(skyPos)
+    local distance = math.abs(currentPos.Y - SKY_HEIGHT)
+    
+    -- Tính thời gian tween dựa trên khoảng cách Y
+    local time = math.clamp(distance / 30, 0.3, 2) -- Nhanh nhưng mượt
+    
+    currentTween = TweenService:Create(
+        hrp,
+        TweenInfo.new(time, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        { CFrame = CFrame.new(skyPos) }
+    )
+    
+    currentTween:Play()
+    currentTween.Completed:Wait()
     isFlyingInSky = true
     return true
 end
@@ -1013,21 +1030,39 @@ local function swingWeaponUntilEnemyDead(enemyModel, typeName)
     -- Lưu lại character hiện tại, nếu người chơi chết & respawn (character đổi) thì dừng vòng while để chạy lại logic tween
     local trackedCharacter = character
 
-    -- Chờ tween trên không trung hoàn tất trước khi tele xuống
+    -- Chờ tween trên không trung hoàn tất trước khi tween xuống
     if currentTween then
         pcall(function() currentTween.Completed:Wait() end)
     end
 
-    -- Tele xuống enemy ngay lập tức (giữ X và Z, chỉ thay đổi Y)
     local enemyRootPart = enemyModel:FindFirstChild("HumanoidRootPart") or enemyModel.PrimaryPart or
         enemyModel:FindFirstChildWhichIsA("BasePart", true)
     if not enemyRootPart then
         return
     end
 
-    -- Tele xuống vị trí đánh enemy (selectedDistance phía trên enemy)
+    -- Tween xuống enemy (giữ X và Z, chỉ thay đổi Y) để camera mượt hơn
+    local currentPos = hrp.Position
     local targetPos = enemyRootPart.Position + Vector3.new(0, selectedDistance, 0)
-    hrp.CFrame = CFrame.new(targetPos, enemyRootPart.Position)
+    local distance = math.abs(currentPos.Y - targetPos.Y)
+    
+    -- Tính thời gian tween dựa trên khoảng cách Y
+    local time = math.clamp(distance / 40, 0.2, 1.5) -- Nhanh nhưng mượt
+    
+    -- Hủy tween cũ nếu còn chạy
+    if currentTween then
+        pcall(function() currentTween:Cancel() end)
+    end
+    
+    local lookAtCFrame = CFrame.new(targetPos, enemyRootPart.Position)
+    currentTween = TweenService:Create(
+        hrp,
+        TweenInfo.new(time, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+        { CFrame = lookAtCFrame }
+    )
+    
+    currentTween:Play()
+    currentTween.Completed:Wait()
     isFlyingInSky = false -- Đánh dấu đã xuống đánh quái
 
     -- Tắt AutoRotate để tránh game tự động xoay nhân vật
@@ -1248,11 +1283,18 @@ sections.Enemy:Toggle({
                 flyToSky()
             end
         else
-            -- Khi tắt, reset flag
+            -- Khi tắt, reset flag và tắt camera follow
             isFlyingInSky = false
+            if cameraFollowConnection then
+                cameraFollowConnection:Disconnect()
+                cameraFollowConnection = nil
+            end
         end
     end,
 }, "AutoFarmEnemyToggle")
+
+-- Camera follow connection để camera luôn focus vào character
+local cameraFollowConnection = nil
 
 task.spawn(function()
     while true do
@@ -1266,6 +1308,26 @@ task.spawn(function()
             if hrp and not isFlyingInSky then
                 flyToSky()
                 task.wait(0.2) -- Chờ một chút để đảm bảo đã bay lên
+            end
+
+            -- Bật camera follow nếu chưa bật
+            if character and hrp and not cameraFollowConnection then
+                cameraFollowConnection = RunService.Heartbeat:Connect(function()
+                    if not autoFarmEnemyEnabled or not character or not hrp or not hrp.Parent then
+                        if cameraFollowConnection then
+                            cameraFollowConnection:Disconnect()
+                            cameraFollowConnection = nil
+                        end
+                        return
+                    end
+                    
+                    local camera = workspace.CurrentCamera
+                    if camera then
+                        -- Camera luôn focus vào character với offset phía sau
+                        local cameraOffset = hrp.CFrame.LookVector * -10 + Vector3.new(0, 5, 0)
+                        camera.CFrame = CFrame.lookAt(hrp.Position + cameraOffset, hrp.Position)
+                    end
+                end)
             end
 
             if character and hrp then
@@ -1320,6 +1382,11 @@ task.spawn(function()
                 end
             end
         else
+            -- Tắt camera follow khi Auto Farm Enemy tắt
+            if cameraFollowConnection then
+                cameraFollowConnection:Disconnect()
+                cameraFollowConnection = nil
+            end
             task.wait(0.3) -- Nếu disabled, chờ lâu hơn
         end
     end
