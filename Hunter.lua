@@ -369,10 +369,10 @@ local function getClosestRockPartByTypes(typeList)
 
                 -- Chỉ tính rock nếu không trong cooldown
                 if not conflictTime or (currentTime - conflictTime) >= CONFLICT_COOLDOWN then
-                local dist = (hrp.Position - part.Position).Magnitude
-                if dist < closestDist then
-                    closestDist = dist
-                    closestPart = part
+                    local dist = (hrp.Position - part.Position).Magnitude
+                    if dist < closestDist then
+                        closestDist = dist
+                        closestPart = part
                     end
                 end
             end
@@ -912,7 +912,7 @@ end
 
 local currentTween = nil
 
--- Hàm bay lên trời (dùng tween để camera mượt hơn)
+-- Hàm bay lên trời ngay lập tức
 local function flyToSky()
     local player = Players.LocalPlayer
     local character = player.Character
@@ -925,27 +925,10 @@ local function flyToSky()
         return false
     end
 
-    -- Hủy tween cũ nếu còn chạy
-    if currentTween then
-        pcall(function() currentTween:Cancel() end)
-    end
-
-    -- Tween lên trời (giữ X và Z, chỉ thay đổi Y) để camera mượt hơn
+    -- Tele lên trời ngay lập tức (giữ X và Z, chỉ thay đổi Y)
     local currentPos = hrp.Position
     local skyPos = Vector3.new(currentPos.X, SKY_HEIGHT, currentPos.Z)
-    local distance = math.abs(currentPos.Y - SKY_HEIGHT)
-    
-    -- Tính thời gian tween dựa trên khoảng cách Y
-    local time = math.clamp(distance / 30, 0.3, 2) -- Nhanh nhưng mượt
-    
-    currentTween = TweenService:Create(
-        hrp,
-        TweenInfo.new(time, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-        { CFrame = CFrame.new(skyPos) }
-    )
-    
-    currentTween:Play()
-    currentTween.Completed:Wait()
+    hrp.CFrame = CFrame.new(skyPos)
     isFlyingInSky = true
     return true
 end
@@ -978,7 +961,8 @@ local function tweenToEnemyInSky(enemyModel)
     local enemyPos = enemyRootPart.Position
     local targetPos = Vector3.new(enemyPos.X, SKY_HEIGHT, enemyPos.Z)
     local currentPos = hrp.Position
-    local distanceToTarget = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(targetPos.X, 0, targetPos.Z)).Magnitude
+    local distanceToTarget = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(targetPos.X, 0, targetPos.Z))
+    .Magnitude
 
     -- Tính thời gian tween dựa trên khoảng cách XZ
     local time = math.clamp(distanceToTarget / 20, 0.5, 5)
@@ -1030,39 +1014,21 @@ local function swingWeaponUntilEnemyDead(enemyModel, typeName)
     -- Lưu lại character hiện tại, nếu người chơi chết & respawn (character đổi) thì dừng vòng while để chạy lại logic tween
     local trackedCharacter = character
 
-    -- Chờ tween trên không trung hoàn tất trước khi tween xuống
+    -- Chờ tween trên không trung hoàn tất trước khi tele xuống
     if currentTween then
         pcall(function() currentTween.Completed:Wait() end)
     end
 
+    -- Tele xuống enemy ngay lập tức (giữ X và Z, chỉ thay đổi Y)
     local enemyRootPart = enemyModel:FindFirstChild("HumanoidRootPart") or enemyModel.PrimaryPart or
         enemyModel:FindFirstChildWhichIsA("BasePart", true)
     if not enemyRootPart then
         return
     end
 
-    -- Tween xuống enemy (giữ X và Z, chỉ thay đổi Y) để camera mượt hơn
-    local currentPos = hrp.Position
+    -- Tele xuống vị trí đánh enemy (selectedDistance phía trên enemy)
     local targetPos = enemyRootPart.Position + Vector3.new(0, selectedDistance, 0)
-    local distance = math.abs(currentPos.Y - targetPos.Y)
-    
-    -- Tính thời gian tween dựa trên khoảng cách Y
-    local time = math.clamp(distance / 40, 0.2, 1.5) -- Nhanh nhưng mượt
-    
-    -- Hủy tween cũ nếu còn chạy
-    if currentTween then
-        pcall(function() currentTween:Cancel() end)
-    end
-    
-    local lookAtCFrame = CFrame.new(targetPos, enemyRootPart.Position)
-    currentTween = TweenService:Create(
-        hrp,
-        TweenInfo.new(time, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-        { CFrame = lookAtCFrame }
-    )
-    
-    currentTween:Play()
-    currentTween.Completed:Wait()
+    hrp.CFrame = CFrame.new(targetPos, enemyRootPart.Position)
     isFlyingInSky = false -- Đánh dấu đã xuống đánh quái
 
     -- Tắt AutoRotate để tránh game tự động xoay nhân vật
@@ -1283,18 +1249,11 @@ sections.Enemy:Toggle({
                 flyToSky()
             end
         else
-            -- Khi tắt, reset flag và tắt camera follow
+            -- Khi tắt, reset flag
             isFlyingInSky = false
-            if cameraFollowConnection then
-                cameraFollowConnection:Disconnect()
-                cameraFollowConnection = nil
-            end
         end
     end,
 }, "AutoFarmEnemyToggle")
-
--- Camera follow connection để camera luôn focus vào character
-local cameraFollowConnection = nil
 
 task.spawn(function()
     while true do
@@ -1308,26 +1267,6 @@ task.spawn(function()
             if hrp and not isFlyingInSky then
                 flyToSky()
                 task.wait(0.2) -- Chờ một chút để đảm bảo đã bay lên
-            end
-
-            -- Bật camera follow nếu chưa bật
-            if character and hrp and not cameraFollowConnection then
-                cameraFollowConnection = RunService.Heartbeat:Connect(function()
-                    if not autoFarmEnemyEnabled or not character or not hrp or not hrp.Parent then
-                        if cameraFollowConnection then
-                            cameraFollowConnection:Disconnect()
-                            cameraFollowConnection = nil
-                        end
-                        return
-                    end
-                    
-                    local camera = workspace.CurrentCamera
-                    if camera then
-                        -- Camera luôn focus vào character với offset phía sau
-                        local cameraOffset = hrp.CFrame.LookVector * -10 + Vector3.new(0, 5, 0)
-                        camera.CFrame = CFrame.lookAt(hrp.Position + cameraOffset, hrp.Position)
-                    end
-                end)
             end
 
             if character and hrp then
@@ -1357,7 +1296,8 @@ task.spawn(function()
                             -- Tính khoảng cách XZ (bỏ qua Y) vì đang bay trên trời
                             local hrpPos = hrp.Position
                             local enemyPos = rootPart.Position
-                            local dist = (Vector3.new(hrpPos.X, 0, hrpPos.Z) - Vector3.new(enemyPos.X, 0, enemyPos.Z)).Magnitude
+                            local dist = (Vector3.new(hrpPos.X, 0, hrpPos.Z) - Vector3.new(enemyPos.X, 0, enemyPos.Z))
+                            .Magnitude
                             if dist < closestDist then
                                 closestDist = dist
                                 closestTarget = target
@@ -1382,11 +1322,6 @@ task.spawn(function()
                 end
             end
         else
-            -- Tắt camera follow khi Auto Farm Enemy tắt
-            if cameraFollowConnection then
-                cameraFollowConnection:Disconnect()
-                cameraFollowConnection = nil
-            end
             task.wait(0.3) -- Nếu disabled, chờ lâu hơn
         end
     end
