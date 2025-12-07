@@ -166,9 +166,7 @@ local enemyTypeDropdown = nil
 -- Độ cao trên trời để bay (Y coordinate)
 local SKY_HEIGHT = 300
 local isFlyingInSky = false -- Flag để biết đang bay trên trời hay đang đánh quái
-
--- Camera follow connection để camera luôn focus vào character
-local cameraFollowConnection = nil
+local cameraStabilizeConnection = nil -- Connection để ổn định camera
 
 --// Shop Potion state
 local potionNames = {}
@@ -915,7 +913,7 @@ end
 
 local currentTween = nil
 
--- Hàm bay lên trời ngay lập tức (giữ tư thế đứng)
+-- Hàm bay lên trời ngay lập tức
 local function flyToSky()
     local player = Players.LocalPlayer
     local character = player.Character
@@ -929,18 +927,9 @@ local function flyToSky()
     end
 
     -- Tele lên trời ngay lập tức (giữ X và Z, chỉ thay đổi Y)
-    -- Giữ tư thế đứng: nhìn về phía trước (ngang), không úp xuống
     local currentPos = hrp.Position
     local skyPos = Vector3.new(currentPos.X, SKY_HEIGHT, currentPos.Z)
-    local currentLookVector = hrp.CFrame.LookVector
-    -- Chỉ giữ hướng XZ, đặt Y = 0 để nhìn ngang
-    local horizontalLook = Vector3.new(currentLookVector.X, 0, currentLookVector.Z)
-    if horizontalLook.Magnitude < 0.1 then
-        -- Nếu không có hướng ngang, dùng hướng mặc định
-        horizontalLook = Vector3.new(0, 0, -1)
-    end
-    horizontalLook = horizontalLook.Unit
-    hrp.CFrame = CFrame.new(skyPos, skyPos + horizontalLook)
+    hrp.CFrame = CFrame.new(skyPos)
     isFlyingInSky = true
     return true
 end
@@ -976,23 +965,12 @@ local function tweenToEnemyInSky(enemyModel)
     local distanceToTarget = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(targetPos.X, 0, targetPos.Z))
     .Magnitude
 
-    -- Tính thời gian tween dựa trên khoảng cách XZ
-    local time = math.clamp(distanceToTarget / 20, 0.5, 5)
+    -- Giảm tốc độ tween để tránh anti-tp (chỉ di chuyển X và Z, không di chuyển Y)
+    -- Tốc độ chậm hơn: khoảng 8 studs/s, tối thiểu 1.5s, tối đa 15s
+    local time = math.clamp(distanceToTarget / 8, 1.5, 15)
 
-    -- Giữ tư thế đứng: nhìn về phía enemy nhưng chỉ nhìn ngang (không úp xuống)
-    -- Tính hướng từ targetPos đến enemyPos nhưng chỉ lấy XZ, đặt Y = 0
-    local toEnemy = enemyRootPart.Position - targetPos
-    local horizontalToEnemy = Vector3.new(toEnemy.X, 0, toEnemy.Z)
-    if horizontalToEnemy.Magnitude < 0.1 then
-        -- Nếu enemy ở ngay dưới, dùng hướng hiện tại
-        horizontalToEnemy = hrp.CFrame.LookVector
-        horizontalToEnemy = Vector3.new(horizontalToEnemy.X, 0, horizontalToEnemy.Z)
-        if horizontalToEnemy.Magnitude < 0.1 then
-            horizontalToEnemy = Vector3.new(0, 0, -1)
-        end
-    end
-    horizontalToEnemy = horizontalToEnemy.Unit
-    local lookAtCFrame = CFrame.new(targetPos, targetPos + horizontalToEnemy)
+    -- Hướng về enemy (nhưng vẫn ở trên trời)
+    local lookAtCFrame = CFrame.new(targetPos, enemyRootPart.Position)
 
     currentTween = TweenService:Create(
         hrp,
@@ -1050,12 +1028,12 @@ local function swingWeaponUntilEnemyDead(enemyModel, typeName)
         return
     end
 
-    -- Tele xuống vị trí đánh enemy (selectedDistance phía trên enemy)
-    -- Úp người xuống để chém quái: nhìn thẳng xuống enemy
-    local targetPos = enemyRootPart.Position + Vector3.new(0, selectedDistance, 0)
-    local toEnemy = enemyRootPart.Position - targetPos
-    -- Tạo CFrame với hướng nhìn xuống enemy (úp người xuống)
-    hrp.CFrame = CFrame.lookAt(targetPos, enemyRootPart.Position)
+    -- Tele xuống vị trí đánh enemy: đứng dưới quái, nhìn lên trên (giống auto mine)
+    -- selectedDistance là khoảng cách dưới quái (âm)
+    local downOffset = -(selectedDistance or 3)
+    local targetPos = enemyRootPart.Position + Vector3.new(0, downOffset, 0)
+    local lookAtPos = enemyRootPart.Position + Vector3.new(0, 5, 0) -- nhìn chếch lên trên quái
+    hrp.CFrame = CFrame.new(targetPos, lookAtPos)
     isFlyingInSky = false -- Đánh dấu đã xuống đánh quái
 
     -- Tắt AutoRotate để tránh game tự động xoay nhân vật
@@ -1090,9 +1068,11 @@ local function swingWeaponUntilEnemyDead(enemyModel, typeName)
         end
 
         if enemyRootPart and hrp and hrp.Parent then
-            local targetPos = enemyRootPart.Position + Vector3.new(0, selectedDistance, 0)
-            -- Giữ vị trí và úp người xuống nhìn về enemy (tư thế chém quái)
-            hrp.CFrame = CFrame.lookAt(targetPos, enemyRootPart.Position)
+            -- Đứng dưới quái, nhìn lên trên (giống auto mine)
+            local downOffset = -(selectedDistance or 3)
+            local targetPos = enemyRootPart.Position + Vector3.new(0, downOffset, 0)
+            local lookAtPos = enemyRootPart.Position + Vector3.new(0, 5, 0) -- nhìn chếch lên trên quái
+            hrp.CFrame = CFrame.new(targetPos, lookAtPos)
             -- Giữ vận tốc = 0 để không rơi
             if bodyVelocity then
                 bodyVelocity.Velocity = Vector3.new(0, 0, 0)
@@ -1274,39 +1254,46 @@ sections.Enemy:Toggle({
             else
                 -- Khi bật lên, bay lên trời ngay lập tức
                 flyToSky()
-                -- Bật camera follow
-                if not cameraFollowConnection then
-                    cameraFollowConnection = RunService.Heartbeat:Connect(function()
+                -- Bật camera stabilization
+                if not cameraStabilizeConnection then
+                    cameraStabilizeConnection = RunService.Heartbeat:Connect(function()
                         local player = Players.LocalPlayer
                         local character = player.Character
                         if not autoFarmEnemyEnabled or not character then
-                            if cameraFollowConnection then
-                                cameraFollowConnection:Disconnect()
-                                cameraFollowConnection = nil
+                            if cameraStabilizeConnection then
+                                cameraStabilizeConnection:Disconnect()
+                                cameraStabilizeConnection = nil
                             end
                             return
                         end
-                        
+
                         local hrp = character:FindFirstChild("HumanoidRootPart")
                         if not hrp or not hrp.Parent then
                             return
                         end
-                        
+
                         local camera = workspace.CurrentCamera
                         if camera then
-                            -- Camera luôn focus vào character với offset phía sau và trên
-                            local cameraOffset = hrp.CFrame.LookVector * -15 + Vector3.new(0, 8, 0)
-                            camera.CFrame = CFrame.lookAt(hrp.Position + cameraOffset, hrp.Position)
+                            -- Camera ổn định: luôn nhìn từ phía sau và trên character
+                            -- Sử dụng lerp để mượt mà, tránh rung lắc
+                            local targetCFrame = hrp.CFrame
+                            local cameraOffset = targetCFrame.LookVector * -12 + Vector3.new(0, 8, 0)
+                            local targetCameraPos = targetCFrame.Position + cameraOffset
+                            
+                            -- Lerp camera để mượt mà
+                            local currentCameraCFrame = camera.CFrame
+                            local newCameraPos = currentCameraCFrame.Position:Lerp(targetCameraPos, 0.15)
+                            camera.CFrame = CFrame.lookAt(newCameraPos, hrp.Position)
                         end
                     end)
                 end
             end
         else
-            -- Khi tắt, reset flag và tắt camera follow
+            -- Khi tắt, reset flag và tắt camera stabilization
             isFlyingInSky = false
-            if cameraFollowConnection then
-                cameraFollowConnection:Disconnect()
-                cameraFollowConnection = nil
+            if cameraStabilizeConnection then
+                cameraStabilizeConnection:Disconnect()
+                cameraStabilizeConnection = nil
             end
         end
     end,
@@ -1326,29 +1313,36 @@ task.spawn(function()
                 task.wait(0.2) -- Chờ một chút để đảm bảo đã bay lên
             end
 
-            -- Đảm bảo camera follow đang chạy
-            if character and hrp and not cameraFollowConnection then
-                cameraFollowConnection = RunService.Heartbeat:Connect(function()
+            -- Đảm bảo camera stabilization đang chạy
+            if character and hrp and not cameraStabilizeConnection then
+                cameraStabilizeConnection = RunService.Heartbeat:Connect(function()
                     local player = Players.LocalPlayer
                     local character = player.Character
                     if not autoFarmEnemyEnabled or not character then
-                        if cameraFollowConnection then
-                            cameraFollowConnection:Disconnect()
-                            cameraFollowConnection = nil
+                        if cameraStabilizeConnection then
+                            cameraStabilizeConnection:Disconnect()
+                            cameraStabilizeConnection = nil
                         end
                         return
                     end
-                    
+
                     local hrp = character:FindFirstChild("HumanoidRootPart")
                     if not hrp or not hrp.Parent then
                         return
                     end
-                    
+
                     local camera = workspace.CurrentCamera
                     if camera then
-                        -- Camera luôn focus vào character với offset phía sau và trên
-                        local cameraOffset = hrp.CFrame.LookVector * -15 + Vector3.new(0, 8, 0)
-                        camera.CFrame = CFrame.lookAt(hrp.Position + cameraOffset, hrp.Position)
+                        -- Camera ổn định: luôn nhìn từ phía sau và trên character
+                        -- Sử dụng lerp để mượt mà, tránh rung lắc
+                        local targetCFrame = hrp.CFrame
+                        local cameraOffset = targetCFrame.LookVector * -12 + Vector3.new(0, 8, 0)
+                        local targetCameraPos = targetCFrame.Position + cameraOffset
+                        
+                        -- Lerp camera để mượt mà
+                        local currentCameraCFrame = camera.CFrame
+                        local newCameraPos = currentCameraCFrame.Position:Lerp(targetCameraPos, 0.15)
+                        camera.CFrame = CFrame.lookAt(newCameraPos, hrp.Position)
                     end
                 end)
             end
@@ -1406,10 +1400,10 @@ task.spawn(function()
                 end
             end
         else
-            -- Tắt camera follow khi Auto Farm Enemy tắt
-            if cameraFollowConnection then
-                cameraFollowConnection:Disconnect()
-                cameraFollowConnection = nil
+            -- Tắt camera stabilization khi Auto Farm Enemy tắt
+            if cameraStabilizeConnection then
+                cameraStabilizeConnection:Disconnect()
+                cameraStabilizeConnection = nil
             end
             task.wait(0.3) -- Nếu disabled, chờ lâu hơn
         end
