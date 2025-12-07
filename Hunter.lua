@@ -4,7 +4,6 @@ local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TeleportService = game:GetService("TeleportService")
 
 -- Check Game ID
 if game.GameId ~= 7671049560 then
@@ -163,6 +162,10 @@ if type(antiAFKEnabled) ~= "boolean" then
 end
 local enemyTypes = {}
 local enemyTypeDropdown = nil
+
+-- Độ cao trên trời để bay (Y coordinate)
+local SKY_HEIGHT = 100
+local isFlyingInSky = false -- Flag để biết đang bay trên trời hay đang đánh quái
 
 --// Shop Potion state
 local potionNames = {}
@@ -366,10 +369,10 @@ local function getClosestRockPartByTypes(typeList)
 
                 -- Chỉ tính rock nếu không trong cooldown
                 if not conflictTime or (currentTime - conflictTime) >= CONFLICT_COOLDOWN then
-                    local dist = (hrp.Position - part.Position).Magnitude
-                    if dist < closestDist then
-                        closestDist = dist
-                        closestPart = part
+                local dist = (hrp.Position - part.Position).Magnitude
+                if dist < closestDist then
+                    closestDist = dist
+                    closestPart = part
                     end
                 end
             end
@@ -909,7 +912,29 @@ end
 
 local currentTween = nil
 
-local function tweenAboveEnemy(enemyModel, distance)
+-- Hàm bay lên trời ngay lập tức
+local function flyToSky()
+    local player = Players.LocalPlayer
+    local character = player.Character
+    if not character then
+        return false
+    end
+
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        return false
+    end
+
+    -- Tele lên trời ngay lập tức (giữ X và Z, chỉ thay đổi Y)
+    local currentPos = hrp.Position
+    local skyPos = Vector3.new(currentPos.X, SKY_HEIGHT, currentPos.Z)
+    hrp.CFrame = CFrame.new(skyPos)
+    isFlyingInSky = true
+    return true
+end
+
+-- Hàm di chuyển trên không trung đến vị trí enemy (giữ Y cao, chỉ di chuyển X và Z)
+local function tweenToEnemyInSky(enemyModel)
     local player = Players.LocalPlayer
     local character = player.Character
     if not character then
@@ -932,21 +957,16 @@ local function tweenAboveEnemy(enemyModel, distance)
         pcall(function() currentTween:Cancel() end)
     end
 
-    -- Tween lên trên đầu enemy với khoảng cách đã chọn, luôn hướng về enemy
-    local targetPos = enemyRootPart.Position + Vector3.new(0, distance, 0)
-    local distanceToTarget = (hrp.Position - targetPos).Magnitude
+    -- Vị trí trên không trung phía trên enemy (giữ Y = SKY_HEIGHT, chỉ di chuyển X và Z)
+    local enemyPos = enemyRootPart.Position
+    local targetPos = Vector3.new(enemyPos.X, SKY_HEIGHT, enemyPos.Z)
+    local currentPos = hrp.Position
+    local distanceToTarget = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(targetPos.X, 0, targetPos.Z)).Magnitude
 
-    -- Nếu ở gần enemy thì tween nhanh nhưng mượt hơn (chậm lại một chút), xa thì tween chậm để tránh anti-tp
-    local time
-    if distanceToTarget <= 100 then
-        -- Gần: vẫn nhanh nhưng không quá giật
-        time = math.clamp(distanceToTarget / 20, 0.4, 4)
-    else
-        -- Xa: an toàn, chậm hơn
-        time = math.clamp(distanceToTarget / 8, 0.8, 7)
-    end
+    -- Tính thời gian tween dựa trên khoảng cách XZ
+    local time = math.clamp(distanceToTarget / 20, 0.5, 5)
 
-    -- Luôn hướng về enemy
+    -- Hướng về enemy (nhưng vẫn ở trên trời)
     local lookAtCFrame = CFrame.new(targetPos, enemyRootPart.Position)
 
     currentTween = TweenService:Create(
@@ -993,6 +1013,23 @@ local function swingWeaponUntilEnemyDead(enemyModel, typeName)
     -- Lưu lại character hiện tại, nếu người chơi chết & respawn (character đổi) thì dừng vòng while để chạy lại logic tween
     local trackedCharacter = character
 
+    -- Chờ tween trên không trung hoàn tất trước khi tele xuống
+    if currentTween then
+        pcall(function() currentTween.Completed:Wait() end)
+    end
+
+    -- Tele xuống enemy ngay lập tức (giữ X và Z, chỉ thay đổi Y)
+    local enemyRootPart = enemyModel:FindFirstChild("HumanoidRootPart") or enemyModel.PrimaryPart or
+        enemyModel:FindFirstChildWhichIsA("BasePart", true)
+    if not enemyRootPart then
+        return
+    end
+
+    -- Tele xuống vị trí đánh enemy (selectedDistance phía trên enemy)
+    local targetPos = enemyRootPart.Position + Vector3.new(0, selectedDistance, 0)
+    hrp.CFrame = CFrame.new(targetPos, enemyRootPart.Position)
+    isFlyingInSky = false -- Đánh dấu đã xuống đánh quái
+
     -- Tắt AutoRotate để tránh game tự động xoay nhân vật
     local originalAutoRotate = hrp.AssemblyAngularVelocity
     hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
@@ -1006,24 +1043,9 @@ local function swingWeaponUntilEnemyDead(enemyModel, typeName)
         bodyVelocity.Parent = hrp
     end
 
-    -- Chờ tween hoàn tất trước khi bắt đầu set CFrame
-    local tweenCompleted = false
-    if currentTween then
-        task.spawn(function()
-            pcall(function() currentTween.Completed:Wait() end)
-            tweenCompleted = true
-        end)
-    else
-        tweenCompleted = true
-    end
-
-    -- Bắt đầu giữ vị trí sau khi tween xong
+    -- Bắt đầu giữ vị trí
     local keepPositionConnection
     keepPositionConnection = RunService.Heartbeat:Connect(function()
-        if not tweenCompleted then
-            return -- Chưa tween xong thì không set CFrame
-        end
-
         -- Nếu AutoFarm tắt, enemy mất, enemy chết, nhân vật đổi (respawn) hoặc Auto Buy & Use đang chạy thì dừng
         if not autoFarmEnemyEnabled
             or not enemyModel
@@ -1039,8 +1061,6 @@ local function swingWeaponUntilEnemyDead(enemyModel, typeName)
             return
         end
 
-        local enemyRootPart = enemyModel:FindFirstChild("HumanoidRootPart") or enemyModel.PrimaryPart or
-            enemyModel:FindFirstChildWhichIsA("BasePart", true)
         if enemyRootPart and hrp and hrp.Parent then
             local targetPos = enemyRootPart.Position + Vector3.new(0, selectedDistance, 0)
             -- Giữ vị trí và hướng về enemy
@@ -1090,6 +1110,11 @@ local function swingWeaponUntilEnemyDead(enemyModel, typeName)
     -- Khôi phục AutoRotate
     if hrp and hrp.Parent then
         hrp.AssemblyAngularVelocity = originalAutoRotate
+    end
+
+    -- Sau khi enemy chết, bay lên trời lại ngay lập tức
+    if autoFarmEnemyEnabled then
+        flyToSky()
     end
 end
 
@@ -1218,7 +1243,13 @@ sections.Enemy:Toggle({
         if value then
             if not selectedEnemyType then
                 notify("Enemy", "Please select an enemy type!", 4)
+            else
+                -- Khi bật lên, bay lên trời ngay lập tức
+                flyToSky()
             end
+        else
+            -- Khi tắt, reset flag
+            isFlyingInSky = false
         end
     end,
 }, "AutoFarmEnemyToggle")
@@ -1227,53 +1258,66 @@ task.spawn(function()
     while true do
         -- Nếu Auto Buy And Use đang hoạt động, tạm dừng Auto Farm Enemy
         if autoFarmEnemyEnabled and selectedEnemyType and #selectedEnemyType > 0 and not isAutoBuyAndUseActive then
-            local closestTarget = nil
-            local closestDist = math.huge
-            local hrp = Players.LocalPlayer.Character and
-                Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            local player = Players.LocalPlayer
+            local character = player.Character
+            local hrp = character and character:FindFirstChild("HumanoidRootPart")
 
-            -- Tìm enemy gần nhất từ tất cả loại được chọn
-            -- Nếu selectedEnemyType chứa "All", dùng tất cả enemyTypes
-            local effectiveEnemyTypes = selectedEnemyType
-            local hasAll = false
-            for _, typeName in ipairs(selectedEnemyType) do
-                if typeName == "All" then
-                    hasAll = true
-                    break
+            -- Đảm bảo đang bay trên trời (nếu chưa thì bay lên)
+            if hrp and not isFlyingInSky then
+                flyToSky()
+                task.wait(0.2) -- Chờ một chút để đảm bảo đã bay lên
+            end
+
+            if character and hrp then
+                local closestTarget = nil
+                local closestDist = math.huge
+
+                -- Tìm enemy gần nhất từ tất cả loại được chọn
+                -- Nếu selectedEnemyType chứa "All", dùng tất cả enemyTypes
+                local effectiveEnemyTypes = selectedEnemyType
+                local hasAll = false
+                for _, typeName in ipairs(selectedEnemyType) do
+                    if typeName == "All" then
+                        hasAll = true
+                        break
+                    end
                 end
-            end
-            if hasAll then
-                effectiveEnemyTypes = enemyTypes
-            end
+                if hasAll then
+                    effectiveEnemyTypes = enemyTypes
+                end
 
-            for _, enemyTypeName in ipairs(effectiveEnemyTypes) do
-                local target = getClosestEnemyByType(enemyTypeName)
-                if target and hrp then
-                    local rootPart = target:FindFirstChild("HumanoidRootPart") or target.PrimaryPart or
-                        target:FindFirstChildWhichIsA("BasePart", true)
-                    if rootPart then
-                        local dist = (hrp.Position - rootPart.Position).Magnitude
-                        if dist < closestDist then
-                            closestDist = dist
-                            closestTarget = target
+                for _, enemyTypeName in ipairs(effectiveEnemyTypes) do
+                    local target = getClosestEnemyByType(enemyTypeName)
+                    if target and hrp then
+                        local rootPart = target:FindFirstChild("HumanoidRootPart") or target.PrimaryPart or
+                            target:FindFirstChildWhichIsA("BasePart", true)
+                        if rootPart then
+                            -- Tính khoảng cách XZ (bỏ qua Y) vì đang bay trên trời
+                            local hrpPos = hrp.Position
+                            local enemyPos = rootPart.Position
+                            local dist = (Vector3.new(hrpPos.X, 0, hrpPos.Z) - Vector3.new(enemyPos.X, 0, enemyPos.Z)).Magnitude
+                            if dist < closestDist then
+                                closestDist = dist
+                                closestTarget = target
+                            end
                         end
                     end
                 end
-            end
 
-            if closestTarget then
-                -- Kiểm tra lại enemy không dead trước khi bắt đầu
-                if not isEnemyDead(closestTarget) then
-                    -- Bắt đầu tween (không chờ)
-                    tweenAboveEnemy(closestTarget, selectedDistance)
-                    -- Chuyển sang đánh ngay lập tức, không chờ tween xong
-                    swingWeaponUntilEnemyDead(closestTarget, extractEnemyTypeName(closestTarget.Name))
-                    -- Sau khi enemy chết/break ra, quay lại ngay lập tức
+                if closestTarget then
+                    -- Kiểm tra lại enemy không dead trước khi bắt đầu
+                    if not isEnemyDead(closestTarget) then
+                        -- Di chuyển trên không trung đến enemy (giữ Y cao, chỉ di chuyển X và Z)
+                        tweenToEnemyInSky(closestTarget)
+                        -- Chuyển sang đánh (sẽ tự tele xuống và đánh)
+                        swingWeaponUntilEnemyDead(closestTarget, extractEnemyTypeName(closestTarget.Name))
+                        -- Sau khi enemy chết, swingWeaponUntilEnemyDead sẽ tự động bay lên lại
+                    else
+                        task.wait(0.1) -- Nếu enemy dead, chờ ngắn rồi tìm lại
+                    end
                 else
-                    task.wait(0.1) -- Nếu enemy dead, chờ ngắn rồi tìm lại
+                    task.wait(0.1) -- Nếu không tìm thấy, chờ rồi tìm lại
                 end
-            else
-                task.wait(0.1) -- Nếu không tìm thấy, chờ rồi tìm lại
             end
         else
             task.wait(0.3) -- Nếu disabled, chờ lâu hơn
@@ -2132,110 +2176,6 @@ sections.SettingsMisc:Toggle({
         notify("Anti AFK", (value and "Enabled" or "Disabled") .. " Anti AFK", 3)
     end,
 }, "AntiAFKToggle")
-
--- Hàm lấy danh sách servers từ place ID
-local function getServersList(placeId)
-    local serversData = nil
-    
-    -- Thử dùng game:HttpGet (phổ biến trong các executor)
-    if game.HttpGet then
-        serversData = game:HttpGet("https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100")
-    elseif HttpService.GetAsync then
-        serversData = HttpService:GetAsync("https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100")
-    elseif game.HttpGetAsync then
-        serversData = game:HttpGetAsync("https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100")
-    end
-    
-    if not serversData then
-        return nil
-    end
-    
-    local success, servers = pcall(function()
-        return HttpService:JSONDecode(serversData)
-    end)
-    
-    if not success or not servers or not servers.data then
-        return nil
-    end
-    
-    return servers.data
-end
-
--- Hàm hop server chỉ trong cùng place ID
-local function hopServer()
-    local placeId1 = 76558904092080
-    local placeId2 = 129009554587176
-    local currentPlaceId = game.PlaceId
-    local currentJobId = game.JobId
-    
-    notify("Hop Server", "Đang tìm server mới...", 3)
-    
-    -- Chỉ hop trong cùng place ID hiện tại
-    local targetPlaceId = currentPlaceId
-    
-    -- Kiểm tra xem có phải là 1 trong 2 place ID được hỗ trợ không
-    if currentPlaceId ~= placeId1 and currentPlaceId ~= placeId2 then
-        notify("Hop Server", "Place ID không được hỗ trợ!", 3)
-        return
-    end
-    
-    local servers = getServersList(targetPlaceId)
-    if not servers or #servers == 0 then
-        notify("Hop Server", "Không tìm thấy server nào!", 3)
-        return
-    end
-    
-    -- Sắp xếp servers theo số người chơi (ít nhất trước)
-    table.sort(servers, function(a, b)
-        local aPlaying = a.playing or 0
-        local bPlaying = b.playing or 0
-        return aPlaying < bPlaying
-    end)
-    
-    -- Thử teleport đến các server, ưu tiên server có ít người và còn chỗ
-    for _, server in ipairs(servers) do
-        -- Bỏ qua server hiện tại
-        if server.id ~= currentJobId then
-            -- Ưu tiên server có chỗ trống
-            if server.playing and server.maxPlayers and server.playing < server.maxPlayers then
-                local success, err = pcall(function()
-                    TeleportService:TeleportToPlaceInstance(targetPlaceId, server.id, Players.LocalPlayer)
-                end)
-                if success then
-                    notify("Hop Server", "Đang teleport đến server mới...", 3)
-                    return
-                end
-            end
-        end
-    end
-    
-    -- Nếu không tìm thấy server có chỗ, thử server bất kỳ (có thể full nhưng vẫn thử)
-    for _, server in ipairs(servers) do
-        if server.id ~= currentJobId then
-            local success, err = pcall(function()
-                TeleportService:TeleportToPlaceInstance(targetPlaceId, server.id, Players.LocalPlayer)
-            end)
-            if success then
-                notify("Hop Server", "Đang teleport đến server mới...", 3)
-                return
-            end
-        end
-    end
-    
-    -- Fallback: dùng TeleportService:Teleport() để teleport đến cùng place
-    notify("Hop Server", "Không tìm thấy server phù hợp. Đang thử lại...", 3)
-    task.wait(0.5)
-    pcall(function()
-        TeleportService:Teleport(targetPlaceId, Players.LocalPlayer)
-    end)
-end
-
-sections.SettingsMisc:Button({
-    Name = "Hop Server",
-    Callback = function()
-        hopServer()
-    end,
-}, "HopServerButton")
 
 -- Global settings giống style UI.lua
 local globalSettings = {
