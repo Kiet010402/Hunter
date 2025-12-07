@@ -1902,8 +1902,19 @@ task.spawn(function()
                                 ProximityPurchaseRF:InvokeServer(unpack(args))
                             end)
 
-                            -- Chờ một chút rồi bay lên trời lại
-                            task.wait(0.5)
+                            -- Chờ đủ lâu để mua potion hoàn tất (tối thiểu 1.5 giây)
+                            task.wait(3)
+                            
+                            -- Kiểm tra lại xem potion đã có trong backpack chưa (để đảm bảo mua thành công)
+                            local checkBackpack = player and player:FindFirstChild("Backpack")
+                            local hasPotionAfterBuy = checkBackpack and checkBackpack:FindFirstChild(selectedPotionName)
+                            
+                            -- Nếu vẫn chưa có potion, chờ thêm một chút
+                            if not hasPotionAfterBuy then
+                                task.wait(5)
+                            end
+                            
+                            -- Bay lên trời lại
                             if autoBuyAndUsePotionEnabled then
                                 flyToSkyForBuy()
                             end
