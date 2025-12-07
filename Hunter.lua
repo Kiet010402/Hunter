@@ -136,6 +136,11 @@ end
 local rockTypes = {}
 local rockTypeDropdown = nil
 
+-- Blacklist để lưu các rock đang bị conflict (có người khác đang đào)
+-- Format: { [rockPart] = timestamp }
+local conflictedRocks = {}
+local CONFLICT_COOLDOWN = 10 -- Thời gian chờ trước khi thử lại rock bị conflict (giây)
+
 --// Enemy state
 local selectedEnemyType = ConfigSystem.CurrentConfig.SelectedEnemyType
 if type(selectedEnemyType) ~= "table" then
@@ -340,15 +345,31 @@ local function getClosestRockPartByTypes(typeList)
 
     local closestPart = nil
     local closestDist = math.huge
+    local currentTime = tick()
 
     for _, typeName in ipairs(effectiveTypes) do
         local parts = getRockPartsByType(typeName)
         for _, part in ipairs(parts) do
             if part and part.Parent then
-                local dist = (hrp.Position - part.Position).Magnitude
-                if dist < closestDist then
-                    closestDist = dist
-                    closestPart = part
+                -- Skip rock nếu đang trong blacklist và chưa hết cooldown
+                local conflictTime = conflictedRocks[part]
+                if conflictTime then
+                    if (currentTime - conflictTime) < CONFLICT_COOLDOWN then
+                        -- Rock vẫn đang trong cooldown, skip
+                        -- Không làm gì, tiếp tục vòng lặp
+                    else
+                        -- Hết cooldown, xóa khỏi blacklist
+                        conflictedRocks[part] = nil
+                    end
+                end
+
+                -- Chỉ tính rock nếu không trong cooldown
+                if not conflictTime or (currentTime - conflictTime) >= CONFLICT_COOLDOWN then
+                    local dist = (hrp.Position - part.Position).Magnitude
+                    if dist < closestDist then
+                        closestDist = dist
+                        closestPart = part
+                    end
                 end
             end
         end
@@ -528,6 +549,10 @@ local function swingPickaxeUntilMinedType(targetPart, typeName)
 
         -- Check notification conflict - nếu có người khác đang mine thì chuyển rock khác ngay
         if checkMiningConflictNotification() then
+            -- Thêm rock vào blacklist để tránh chọn lại
+            if targetPart and targetPart.Parent then
+                conflictedRocks[targetPart] = tick()
+            end
             break
         end
 
@@ -692,6 +717,23 @@ task.spawn(function()
                     swingPickaxeUntilMinedType(target, rockName)
                 end
             end
+        end
+    end
+end)
+
+-- Task tự động dọn dẹp blacklist conflicted rocks (mỗi 5 giây)
+task.spawn(function()
+    while task.wait(5) do
+        local currentTime = tick()
+        local toRemove = {}
+        for rockPart, conflictTime in pairs(conflictedRocks) do
+            -- Xóa rock nếu hết cooldown hoặc rock không còn tồn tại
+            if (currentTime - conflictTime) >= CONFLICT_COOLDOWN or not rockPart or not rockPart.Parent then
+                table.insert(toRemove, rockPart)
+            end
+        end
+        for _, rockPart in ipairs(toRemove) do
+            conflictedRocks[rockPart] = nil
         end
     end
 end)
