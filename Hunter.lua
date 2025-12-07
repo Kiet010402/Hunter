@@ -142,7 +142,7 @@ local conflictedRocks = {}
 local CONFLICT_COOLDOWN = 10 -- Thời gian chờ trước khi thử lại rock bị conflict (giây)
 
 -- Trạng thái bay trên trời cho Auto Mine
-local isMiningInSky = false -- Flag để biết đang bay trên trời hay đang đào
+local isMiningInSky = false           -- Flag để biết đang bay trên trời hay đang đào
 local mineSkyPositionConnection = nil -- Connection để giữ Y cố định khi bay trên trời
 
 --// Enemy state
@@ -169,7 +169,7 @@ local enemyTypeDropdown = nil
 
 -- Độ cao trên trời để bay (Y coordinate)
 local SKY_HEIGHT = 300
-local isFlyingInSky = false -- Flag để biết đang bay trên trời hay đang đánh quái
+local isFlyingInSky = false       -- Flag để biết đang bay trên trời hay đang đánh quái
 local skyPositionConnection = nil -- Connection để giữ Y cố định khi bay trên trời
 
 --// Shop Potion state
@@ -186,7 +186,7 @@ end
 local isAutoBuyAndUseActive = false -- Flag ưu tiên Auto Buy And Use (block Auto Mine & Auto Farm Enemy)
 
 -- Trạng thái bay trên trời cho Auto Buy And Use
-local isBuyingInSky = false -- Flag để biết đang bay trên trời hay đang mua
+local isBuyingInSky = false          -- Flag để biết đang bay trên trời hay đang mua
 local buySkyPositionConnection = nil -- Connection để giữ Y cố định khi bay trên trời
 
 --// Sell Item state
@@ -513,7 +513,8 @@ local function tweenToMineTarget(targetPart)
     local rockPos = targetPart.Position
     local targetPos = Vector3.new(rockPos.X, SKY_HEIGHT, rockPos.Z)
     local currentPos = hrp.Position
-    local distanceToTarget = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(targetPos.X, 0, targetPos.Z)).Magnitude
+    local distanceToTarget = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(targetPos.X, 0, targetPos.Z))
+    .Magnitude
 
     -- Tính thời gian tween dựa trên khoảng cách XZ (chậm hơn vì chỉ di chuyển X và Z, không bị anti-tp)
     -- Tốc độ: khoảng 10 studs/s để an toàn
@@ -579,7 +580,7 @@ local function swingPickaxeUntilMinedType(targetPart, typeName)
     local targetPos = targetPart.Position + Vector3.new(0, downOffset, 0)
     local lookAtPos = targetPart.Position + Vector3.new(0, 5, 0) -- Nhìn chếch lên trên rock
     hrp.CFrame = CFrame.new(targetPos, lookAtPos)
-    isMiningInSky = false -- Đánh dấu đã xuống đào
+    isMiningInSky = false                                        -- Đánh dấu đã xuống đào
 
     -- Tắt xoay tự do để hạn chế game tự chỉnh hướng nhìn
     local originalAutoRotate = hrp.AssemblyAngularVelocity
@@ -836,7 +837,8 @@ task.spawn(function()
                                 local hrpPos = hrp.Position
                                 local rockPos = part.Position
                                 -- Tính khoảng cách XZ (bỏ qua Y)
-                                local dist = (Vector3.new(hrpPos.X, 0, hrpPos.Z) - Vector3.new(rockPos.X, 0, rockPos.Z)).Magnitude
+                                local dist = (Vector3.new(hrpPos.X, 0, hrpPos.Z) - Vector3.new(rockPos.X, 0, rockPos.Z))
+                                .Magnitude
                                 if dist < closestDist then
                                     closestDist = dist
                                     closestTarget = part
@@ -1136,7 +1138,7 @@ local function tweenToEnemyInSky(enemyModel)
     local targetPos = Vector3.new(enemyPos.X, SKY_HEIGHT, enemyPos.Z)
     local currentPos = hrp.Position
     local distanceToTarget = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(targetPos.X, 0, targetPos.Z))
-    .Magnitude
+        .Magnitude
 
     -- Tính thời gian tween dựa trên khoảng cách XZ (chậm hơn vì chỉ di chuyển X và Z, không bị anti-tp)
     -- Tốc độ: khoảng 8 studs/s để an toàn
@@ -1211,7 +1213,7 @@ local function swingWeaponUntilEnemyDead(enemyModel, typeName)
     local targetPos = enemyRootPart.Position + Vector3.new(0, -selectedDistance, 0)
     local lookAtPos = enemyRootPart.Position + Vector3.new(0, 5, 0) -- Nhìn chếch lên trên enemy
     hrp.CFrame = CFrame.new(targetPos, lookAtPos)
-    isFlyingInSky = false -- Đánh dấu đã xuống đánh quái
+    isFlyingInSky = false                                           -- Đánh dấu đã xuống đánh quái
 
     -- Tắt AutoRotate để tránh game tự động xoay nhân vật
     local originalAutoRotate = hrp.AssemblyAngularVelocity
@@ -1484,7 +1486,7 @@ task.spawn(function()
                             local hrpPos = hrp.Position
                             local enemyPos = rootPart.Position
                             local dist = (Vector3.new(hrpPos.X, 0, hrpPos.Z) - Vector3.new(enemyPos.X, 0, enemyPos.Z))
-                            .Magnitude
+                                .Magnitude
                             if dist < closestDist then
                                 closestDist = dist
                                 closestTarget = target
@@ -1609,7 +1611,8 @@ local function tweenToMaria()
     end
 
     local currentPos = hrp.Position
-    local distanceToTarget = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(targetPos.X, 0, targetPos.Z)).Magnitude
+    local distanceToTarget = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(targetPos.X, 0, targetPos.Z))
+    .Magnitude
     -- Tốc độ: khoảng 10 studs/s để an toàn (chỉ di chuyển X và Z, không bị anti-tp)
     local time = math.clamp(distanceToTarget / 10, 1, 8)
 
@@ -1636,6 +1639,12 @@ local function tweenToMaria()
     local finished = false
     tween.Completed:Connect(function()
         finished = true
+        -- Hủy connection giữ Y trên trời ngay khi tween xong để có thể tele xuống
+        if buySkyPositionConnection then
+            buySkyPositionConnection:Disconnect()
+            buySkyPositionConnection = nil
+        end
+        isBuyingInSky = false
     end)
 
     -- Chờ tween xong hoặc bị hủy do tắt toggle
@@ -1645,6 +1654,12 @@ local function tweenToMaria()
                 tween:Cancel()
             end)
             currentMariaTween = nil
+            -- Hủy connection nếu bị hủy
+            if buySkyPositionConnection then
+                buySkyPositionConnection:Disconnect()
+                buySkyPositionConnection = nil
+            end
+            isBuyingInSky = false
             return false
         end
         task.wait(0.05)
@@ -1859,7 +1874,7 @@ task.spawn(function()
                         -- Di chuyển trên không trung đến vị trí mua
                         local ok = tweenToMaria()
                         if ok and autoBuyAndUsePotionEnabled and hrp then
-                            -- Hủy connection giữ Y trên trời
+                            -- Đảm bảo connection đã được hủy (đã được hủy trong tweenToMaria, nhưng kiểm tra lại để an toàn)
                             if buySkyPositionConnection then
                                 buySkyPositionConnection:Disconnect()
                                 buySkyPositionConnection = nil
@@ -1875,6 +1890,9 @@ task.spawn(function()
                             else
                                 targetPos = Vector3.new(-153.73959721191406, 27.377073287963867, 116.34660339355469)
                             end
+
+                            -- Chờ một chút để đảm bảo connection đã được hủy hoàn toàn
+                            task.wait(0.1)
                             hrp.CFrame = CFrame.new(targetPos)
                             isBuyingInSky = false
 
