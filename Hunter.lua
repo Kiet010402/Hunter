@@ -142,7 +142,7 @@ local conflictedRocks = {}
 local CONFLICT_COOLDOWN = 10 -- Thời gian chờ trước khi thử lại rock bị conflict (giây)
 
 -- Trạng thái bay trên trời cho Auto Mine
-local isMiningInSky = false           -- Flag để biết đang bay trên trời hay đang đào
+local isMiningInSky = false -- Flag để biết đang bay trên trời hay đang đào
 local mineSkyPositionConnection = nil -- Connection để giữ Y cố định khi bay trên trời
 
 --// Enemy state
@@ -169,7 +169,7 @@ local enemyTypeDropdown = nil
 
 -- Độ cao trên trời để bay (Y coordinate)
 local SKY_HEIGHT = 300
-local isFlyingInSky = false       -- Flag để biết đang bay trên trời hay đang đánh quái
+local isFlyingInSky = false -- Flag để biết đang bay trên trời hay đang đánh quái
 local skyPositionConnection = nil -- Connection để giữ Y cố định khi bay trên trời
 
 --// Shop Potion state
@@ -184,10 +184,6 @@ if type(autoBuyAndUsePotionEnabled) ~= "boolean" then
     autoBuyAndUsePotionEnabled = ConfigSystem.DefaultConfig.AutoBuyAndUsePotionEnabled
 end
 local isAutoBuyAndUseActive = false -- Flag ưu tiên Auto Buy And Use (block Auto Mine & Auto Farm Enemy)
-
--- Trạng thái bay trên trời cho Auto Buy And Use
-local isBuyingInSky = false          -- Flag để biết đang bay trên trời hay đang mua
-local buySkyPositionConnection = nil -- Connection để giữ Y cố định khi bay trên trời
 
 --// Sell Item state
 local oreNames = {}
@@ -476,11 +472,13 @@ local function flyToSkyForMine()
             or not isMiningInSky
             or Players.LocalPlayer.Character ~= trackedCharacter
             or not hrp
-            or not hrp.Parent then
+            or not hrp.Parent
+            or isAutoBuyAndUseActive then -- Ngắt ngay khi Auto Buy And Use chạy
             if mineSkyPositionConnection then
                 mineSkyPositionConnection:Disconnect()
                 mineSkyPositionConnection = nil
             end
+            isMiningInSky = false -- Reset flag
             return
         end
 
@@ -513,8 +511,7 @@ local function tweenToMineTarget(targetPart)
     local rockPos = targetPart.Position
     local targetPos = Vector3.new(rockPos.X, SKY_HEIGHT, rockPos.Z)
     local currentPos = hrp.Position
-    local distanceToTarget = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(targetPos.X, 0, targetPos.Z))
-        .Magnitude
+    local distanceToTarget = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(targetPos.X, 0, targetPos.Z)).Magnitude
 
     -- Tính thời gian tween dựa trên khoảng cách XZ (chậm hơn vì chỉ di chuyển X và Z, không bị anti-tp)
     -- Tốc độ: khoảng 10 studs/s để an toàn
@@ -580,7 +577,7 @@ local function swingPickaxeUntilMinedType(targetPart, typeName)
     local targetPos = targetPart.Position + Vector3.new(0, downOffset, 0)
     local lookAtPos = targetPart.Position + Vector3.new(0, 5, 0) -- Nhìn chếch lên trên rock
     hrp.CFrame = CFrame.new(targetPos, lookAtPos)
-    isMiningInSky = false                                        -- Đánh dấu đã xuống đào
+    isMiningInSky = false -- Đánh dấu đã xuống đào
 
     -- Tắt xoay tự do để hạn chế game tự chỉnh hướng nhìn
     local originalAutoRotate = hrp.AssemblyAngularVelocity
@@ -837,8 +834,7 @@ task.spawn(function()
                                 local hrpPos = hrp.Position
                                 local rockPos = part.Position
                                 -- Tính khoảng cách XZ (bỏ qua Y)
-                                local dist = (Vector3.new(hrpPos.X, 0, hrpPos.Z) - Vector3.new(rockPos.X, 0, rockPos.Z))
-                                    .Magnitude
+                                local dist = (Vector3.new(hrpPos.X, 0, hrpPos.Z) - Vector3.new(rockPos.X, 0, rockPos.Z)).Magnitude
                                 if dist < closestDist then
                                     closestDist = dist
                                     closestTarget = part
@@ -1089,11 +1085,13 @@ local function flyToSky()
             or not isFlyingInSky
             or Players.LocalPlayer.Character ~= trackedCharacter
             or not hrp
-            or not hrp.Parent then
+            or not hrp.Parent
+            or isAutoBuyAndUseActive then -- Ngắt ngay khi Auto Buy And Use chạy
             if skyPositionConnection then
                 skyPositionConnection:Disconnect()
                 skyPositionConnection = nil
             end
+            isFlyingInSky = false -- Reset flag
             return
         end
 
@@ -1138,7 +1136,7 @@ local function tweenToEnemyInSky(enemyModel)
     local targetPos = Vector3.new(enemyPos.X, SKY_HEIGHT, enemyPos.Z)
     local currentPos = hrp.Position
     local distanceToTarget = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(targetPos.X, 0, targetPos.Z))
-        .Magnitude
+    .Magnitude
 
     -- Tính thời gian tween dựa trên khoảng cách XZ (chậm hơn vì chỉ di chuyển X và Z, không bị anti-tp)
     -- Tốc độ: khoảng 8 studs/s để an toàn
@@ -1213,7 +1211,7 @@ local function swingWeaponUntilEnemyDead(enemyModel, typeName)
     local targetPos = enemyRootPart.Position + Vector3.new(0, -selectedDistance, 0)
     local lookAtPos = enemyRootPart.Position + Vector3.new(0, 5, 0) -- Nhìn chếch lên trên enemy
     hrp.CFrame = CFrame.new(targetPos, lookAtPos)
-    isFlyingInSky = false                                           -- Đánh dấu đã xuống đánh quái
+    isFlyingInSky = false -- Đánh dấu đã xuống đánh quái
 
     -- Tắt AutoRotate để tránh game tự động xoay nhân vật
     local originalAutoRotate = hrp.AssemblyAngularVelocity
@@ -1486,7 +1484,7 @@ task.spawn(function()
                             local hrpPos = hrp.Position
                             local enemyPos = rootPart.Position
                             local dist = (Vector3.new(hrpPos.X, 0, hrpPos.Z) - Vector3.new(enemyPos.X, 0, enemyPos.Z))
-                                .Magnitude
+                            .Magnitude
                             if dist < closestDist then
                                 closestDist = dist
                                 closestTarget = target
@@ -1522,67 +1520,6 @@ sections.ShopPotion:Header({ Name = "Shop Potion" })
 -- Tween tới vị trí cố định mua potion (tùy theo PlaceId)
 local currentMariaTween = nil
 
--- Hàm bay lên trời cho Auto Buy And Use
-local function flyToSkyForBuy()
-    local player = Players.LocalPlayer
-    local character = player.Character
-    if not character then
-        return false
-    end
-
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    if not hrp then
-        return false
-    end
-
-    -- Hủy connection cũ nếu có
-    if buySkyPositionConnection then
-        buySkyPositionConnection:Disconnect()
-        buySkyPositionConnection = nil
-    end
-
-    -- Tele lên trời ngay lập tức (giữ X và Z, chỉ thay đổi Y)
-    local currentPos = hrp.Position
-    local skyPos = Vector3.new(currentPos.X, SKY_HEIGHT, currentPos.Z)
-    hrp.CFrame = CFrame.new(skyPos)
-    isBuyingInSky = true
-
-    -- Tạo BodyVelocity để giữ Y cố định
-    local bodyVelocity = hrp:FindFirstChild("BodyVelocity")
-    if not bodyVelocity then
-        bodyVelocity = Instance.new("BodyVelocity")
-        bodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
-        bodyVelocity.Parent = hrp
-    end
-
-    -- Giữ Y cố định bằng Heartbeat connection
-    local trackedCharacter = character
-    buySkyPositionConnection = RunService.Heartbeat:Connect(function()
-        if not autoBuyAndUsePotionEnabled
-            or not isBuyingInSky
-            or Players.LocalPlayer.Character ~= trackedCharacter
-            or not hrp
-            or not hrp.Parent then
-            if buySkyPositionConnection then
-                buySkyPositionConnection:Disconnect()
-                buySkyPositionConnection = nil
-            end
-            return
-        end
-
-        -- Giữ Y cố định ở SKY_HEIGHT, chỉ cho phép di chuyển X và Z
-        local currentPos = hrp.Position
-        local fixedPos = Vector3.new(currentPos.X, SKY_HEIGHT, currentPos.Z)
-        hrp.CFrame = CFrame.new(fixedPos, fixedPos + hrp.CFrame.LookVector * Vector3.new(1, 0, 1))
-        if bodyVelocity then
-            bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-        end
-    end)
-
-    return true
-end
-
--- Hàm di chuyển trên không trung đến vị trí mua potion (giữ Y cao, chỉ di chuyển X và Z)
 local function tweenToMaria()
     local player = Players.LocalPlayer
     local character = player.Character
@@ -1601,20 +1538,17 @@ local function tweenToMaria()
 
     if placeId == 76558904092080 then
         -- Place cũ
-        targetPos = Vector3.new(-153.73959721191406, SKY_HEIGHT, 116.34660339355469)
+        targetPos = Vector3.new(-153.73959721191406, 27.377073287963867, 116.34660339355469)
     elseif placeId == 129009554587176 then
         -- Place mới
-        targetPos = Vector3.new(-96.84030151367188, SKY_HEIGHT, -43.52947235107422)
+        targetPos = Vector3.new(-96.84030151367188, 20.6254825592041, -43.52947235107422)
     else
         -- Fallback: dùng tọa độ cũ
-        targetPos = Vector3.new(-153.73959721191406, SKY_HEIGHT, 116.34660339355469)
+        targetPos = Vector3.new(-153.73959721191406, 27.377073287963867, 116.34660339355469)
     end
-
-    local currentPos = hrp.Position
-    local distanceToTarget = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(targetPos.X, 0, targetPos.Z))
-        .Magnitude
-    -- Tốc độ: khoảng 10 studs/s để an toàn (chỉ di chuyển X và Z, không bị anti-tp)
-    local time = math.clamp(distanceToTarget / 10, 1, 8)
+    local distance = (hrp.Position - targetPos).Magnitude
+    -- Tween chậm hơn để hạn chế dịch chuyển gấp
+    local time = math.clamp(distance / 8, 1.2, 12)
 
     -- Hướng nhìn giữ nguyên hướng hiện tại theo trục Y
     local lookAtCFrame = CFrame.new(targetPos, targetPos + (hrp.CFrame.LookVector * Vector3.new(1, 0, 1)))
@@ -1639,12 +1573,6 @@ local function tweenToMaria()
     local finished = false
     tween.Completed:Connect(function()
         finished = true
-        -- Hủy connection giữ Y trên trời ngay khi tween xong để có thể tele xuống
-        if buySkyPositionConnection then
-            buySkyPositionConnection:Disconnect()
-            buySkyPositionConnection = nil
-        end
-        isBuyingInSky = false
     end)
 
     -- Chờ tween xong hoặc bị hủy do tắt toggle
@@ -1654,12 +1582,6 @@ local function tweenToMaria()
                 tween:Cancel()
             end)
             currentMariaTween = nil
-            -- Hủy connection nếu bị hủy
-            if buySkyPositionConnection then
-                buySkyPositionConnection:Disconnect()
-                buySkyPositionConnection = nil
-            end
-            isBuyingInSky = false
             return false
         end
         task.wait(0.05)
@@ -1736,16 +1658,6 @@ sections.ShopPotion:Toggle({
         if value then
             if not selectedPotionName then
                 notify("Shop Potion", "Chưa chọn potion!", 3)
-            else
-                -- Khi bật lên, bay lên trời ngay lập tức
-                flyToSkyForBuy()
-            end
-        else
-            -- Khi tắt, reset flag và dọn dẹp connection
-            isBuyingInSky = false
-            if buySkyPositionConnection then
-                buySkyPositionConnection:Disconnect()
-                buySkyPositionConnection = nil
             end
         end
     end,
@@ -1821,20 +1733,34 @@ task.spawn(function()
         -- Nếu toggle tắt hoặc chưa chọn potion thì đảm bảo flag cũng tắt và bỏ qua
         if not autoBuyAndUsePotionEnabled or not selectedPotionName then
             isAutoBuyAndUseActive = false
+            -- Ngắt các connection giữ Y trên trời của Auto Mine và Auto Farm Enemy
+            if mineSkyPositionConnection then
+                mineSkyPositionConnection:Disconnect()
+                mineSkyPositionConnection = nil
+            end
+            if skyPositionConnection then
+                skyPositionConnection:Disconnect()
+                skyPositionConnection = nil
+            end
+            isMiningInSky = false
+            isFlyingInSky = false
         else
-            -- Bắt đầu 1 chu kỳ Auto Buy & Use: set flag để block Auto Mine / Auto Farm Enemy
+            -- Bắt đầu 1 chu kỳ Auto Buy & Use: set flag để block Auto Mine / Auto Farm Enemy NGAY LẬP TỨC
             isAutoBuyAndUseActive = true
 
-            local player = Players.LocalPlayer
-            local character = player and player.Character
-            local hrp = character and character:FindFirstChild("HumanoidRootPart")
-
-            -- Đảm bảo đang bay trên trời (nếu chưa thì bay lên)
-            if hrp and not isBuyingInSky then
-                flyToSkyForBuy()
-                task.wait(0.2) -- Chờ một chút để đảm bảo đã bay lên
+            -- Ngắt các connection giữ Y trên trời của Auto Mine và Auto Farm Enemy ngay lập tức
+            if mineSkyPositionConnection then
+                mineSkyPositionConnection:Disconnect()
+                mineSkyPositionConnection = nil
             end
+            if skyPositionConnection then
+                skyPositionConnection:Disconnect()
+                skyPositionConnection = nil
+            end
+            isMiningInSky = false
+            isFlyingInSky = false
 
+            local player = Players.LocalPlayer
             local backpack = player and player:FindFirstChild("Backpack")
             local canAfford = false
 
@@ -1871,104 +1797,18 @@ task.spawn(function()
                     local hasPotionEffect = hasPotionInPerks(selectedPotionName)
                     if not hasPotionEffect and autoBuyAndUsePotionEnabled then
                         -- Không có effect => đã hết potion => đi mua
-                        -- Di chuyển trên không trung đến vị trí mua
                         local ok = tweenToMaria()
-                        if ok and autoBuyAndUsePotionEnabled and hrp then
-                            -- Đảm bảo connection đã được hủy (đã được hủy trong tweenToMaria, nhưng kiểm tra lại để an toàn)
-                            if buySkyPositionConnection then
-                                buySkyPositionConnection:Disconnect()
-                                buySkyPositionConnection = nil
-                            end
-
-                            isBuyingInSky = false -- Set flag ngay để connection không chạy nữa
-
-                            -- Tele xuống vị trí mua potion ngay lập tức
-                            local placeId = game.PlaceId
-                            local targetPos
-                            if placeId == 76558904092080 then
-                                targetPos = Vector3.new(-153.73959721191406, 27.377073287963867, 116.34660339355469)
-                            elseif placeId == 129009554587176 then
-                                targetPos = Vector3.new(-96.84030151367188, 20.6254825592041, -43.52947235107422)
-                            else
-                                targetPos = Vector3.new(-153.73959721191406, 27.377073287963867, 116.34660339355469)
-                            end
-
-                            -- Chờ một chút để đảm bảo connection đã được hủy hoàn toàn
-                            task.wait(0.2)
-
-                            -- Tele xuống và giữ vị trí
-                            hrp.CFrame = CFrame.new(targetPos)
-
-                            -- Tạo BodyVelocity tạm thời để giữ vị trí dưới đất
-                            local tempBodyVelocity = hrp:FindFirstChild("BodyVelocity")
-                            if not tempBodyVelocity then
-                                tempBodyVelocity = Instance.new("BodyVelocity")
-                                tempBodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
-                                tempBodyVelocity.Velocity = Vector3.new(0, 0, 0)
-                                tempBodyVelocity.Parent = hrp
-                            end
-
-                            -- Giữ vị trí trong khi mua potion
-                            local keepPositionConnection
-                            local trackedCharacter = character
-                            keepPositionConnection = RunService.Heartbeat:Connect(function()
-                                if not autoBuyAndUsePotionEnabled
-                                    or Players.LocalPlayer.Character ~= trackedCharacter
-                                    or not hrp
-                                    or not hrp.Parent
-                                    or isBuyingInSky then
-                                    if keepPositionConnection then
-                                        keepPositionConnection:Disconnect()
-                                    end
-                                    if tempBodyVelocity and tempBodyVelocity.Parent then
-                                        tempBodyVelocity:Destroy()
-                                    end
-                                    return
-                                end
-
-                                -- Giữ vị trí mua potion
-                                hrp.CFrame = CFrame.new(targetPos)
-                                if tempBodyVelocity then
-                                    tempBodyVelocity.Velocity = Vector3.new(0, 0, 0)
-                                end
-                            end)
-
-                            -- Mua potion
+                        if ok and autoBuyAndUsePotionEnabled then
                             pcall(function()
-                                local args = { selectedPotionName, 1 }
+                                local args = { selectedPotionName, 3 }
                                 ProximityPurchaseRF:InvokeServer(unpack(args))
                             end)
-
-                            -- Chờ đủ lâu để mua potion hoàn tất
-                            task.wait(2)
-
-                            -- Kiểm tra lại xem potion đã có trong backpack chưa (để đảm bảo mua thành công)
-                            local checkBackpack = player and player:FindFirstChild("Backpack")
-                            local hasPotionAfterBuy = checkBackpack and checkBackpack:FindFirstChild(selectedPotionName)
-
-                            -- Nếu vẫn chưa có potion, chờ thêm một chút
-                            if not hasPotionAfterBuy then
-                                task.wait(2)
-                            end
-
-                            -- Dọn dẹp connection giữ vị trí
-                            if keepPositionConnection then
-                                keepPositionConnection:Disconnect()
-                            end
-                            if tempBodyVelocity and tempBodyVelocity.Parent then
-                                tempBodyVelocity:Destroy()
-                            end
-
-                            -- Bay lên trời lại
-                            if autoBuyAndUsePotionEnabled then
-                                flyToSkyForBuy()
-                            end
                         end
                     end
                 end
             end
 
-            -- Kết thúc 1 chu kỳ Auto Buy & Use
+            -- Kết thúc 1 chu kỳ Auto Buy & Use - reset flag sau khi hoàn tất
             isAutoBuyAndUseActive = false
         end
     end
