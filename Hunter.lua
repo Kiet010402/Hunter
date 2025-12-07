@@ -1006,7 +1006,7 @@ local function tweenToEnemyInSky(enemyModel)
 
     -- Tính thời gian tween dựa trên khoảng cách XZ (chậm hơn vì chỉ di chuyển X và Z, không bị anti-tp)
     -- Tốc độ: khoảng 8 studs/s để an toàn
-    local time = math.clamp(distanceToTarget / 8, 1, 10)
+    local time = math.clamp(distanceToTarget / 10, 1, 8)
 
     -- Hướng về enemy (nhưng vẫn ở trên trời)
     local lookAtCFrame = CFrame.new(targetPos, enemyRootPart.Position)
