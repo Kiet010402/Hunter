@@ -514,7 +514,7 @@ local function tweenToMineTarget(targetPart)
     local targetPos = Vector3.new(rockPos.X, SKY_HEIGHT, rockPos.Z)
     local currentPos = hrp.Position
     local distanceToTarget = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(targetPos.X, 0, targetPos.Z))
-    .Magnitude
+        .Magnitude
 
     -- Tính thời gian tween dựa trên khoảng cách XZ (chậm hơn vì chỉ di chuyển X và Z, không bị anti-tp)
     -- Tốc độ: khoảng 10 studs/s để an toàn
@@ -838,7 +838,7 @@ task.spawn(function()
                                 local rockPos = part.Position
                                 -- Tính khoảng cách XZ (bỏ qua Y)
                                 local dist = (Vector3.new(hrpPos.X, 0, hrpPos.Z) - Vector3.new(rockPos.X, 0, rockPos.Z))
-                                .Magnitude
+                                    .Magnitude
                                 if dist < closestDist then
                                     closestDist = dist
                                     closestTarget = part
@@ -1612,7 +1612,7 @@ local function tweenToMaria()
 
     local currentPos = hrp.Position
     local distanceToTarget = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(targetPos.X, 0, targetPos.Z))
-    .Magnitude
+        .Magnitude
     -- Tốc độ: khoảng 10 studs/s để an toàn (chỉ di chuyển X và Z, không bị anti-tp)
     local time = math.clamp(distanceToTarget / 10, 1, 8)
 
@@ -1880,6 +1880,8 @@ task.spawn(function()
                                 buySkyPositionConnection = nil
                             end
 
+                            isBuyingInSky = false -- Set flag ngay để connection không chạy nữa
+
                             -- Tele xuống vị trí mua potion ngay lập tức
                             local placeId = game.PlaceId
                             local targetPos
@@ -1892,28 +1894,71 @@ task.spawn(function()
                             end
 
                             -- Chờ một chút để đảm bảo connection đã được hủy hoàn toàn
-                            task.wait(0.1)
+                            task.wait(0.2)
+
+                            -- Tele xuống và giữ vị trí
                             hrp.CFrame = CFrame.new(targetPos)
-                            isBuyingInSky = false
+
+                            -- Tạo BodyVelocity tạm thời để giữ vị trí dưới đất
+                            local tempBodyVelocity = hrp:FindFirstChild("BodyVelocity")
+                            if not tempBodyVelocity then
+                                tempBodyVelocity = Instance.new("BodyVelocity")
+                                tempBodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
+                                tempBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                                tempBodyVelocity.Parent = hrp
+                            end
+
+                            -- Giữ vị trí trong khi mua potion
+                            local keepPositionConnection
+                            local trackedCharacter = character
+                            keepPositionConnection = RunService.Heartbeat:Connect(function()
+                                if not autoBuyAndUsePotionEnabled
+                                    or Players.LocalPlayer.Character ~= trackedCharacter
+                                    or not hrp
+                                    or not hrp.Parent
+                                    or isBuyingInSky then
+                                    if keepPositionConnection then
+                                        keepPositionConnection:Disconnect()
+                                    end
+                                    if tempBodyVelocity and tempBodyVelocity.Parent then
+                                        tempBodyVelocity:Destroy()
+                                    end
+                                    return
+                                end
+
+                                -- Giữ vị trí mua potion
+                                hrp.CFrame = CFrame.new(targetPos)
+                                if tempBodyVelocity then
+                                    tempBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                                end
+                            end)
 
                             -- Mua potion
                             pcall(function()
-                                local args = { selectedPotionName, 3 }
+                                local args = { selectedPotionName, 1 }
                                 ProximityPurchaseRF:InvokeServer(unpack(args))
                             end)
 
-                            -- Chờ đủ lâu để mua potion hoàn tất (tối thiểu 1.5 giây)
-                            task.wait(3)
-                            
+                            -- Chờ đủ lâu để mua potion hoàn tất
+                            task.wait(2)
+
                             -- Kiểm tra lại xem potion đã có trong backpack chưa (để đảm bảo mua thành công)
                             local checkBackpack = player and player:FindFirstChild("Backpack")
                             local hasPotionAfterBuy = checkBackpack and checkBackpack:FindFirstChild(selectedPotionName)
-                            
+
                             -- Nếu vẫn chưa có potion, chờ thêm một chút
                             if not hasPotionAfterBuy then
-                                task.wait(5)
+                                task.wait(2)
                             end
-                            
+
+                            -- Dọn dẹp connection giữ vị trí
+                            if keepPositionConnection then
+                                keepPositionConnection:Disconnect()
+                            end
+                            if tempBodyVelocity and tempBodyVelocity.Parent then
+                                tempBodyVelocity:Destroy()
+                            end
+
                             -- Bay lên trời lại
                             if autoBuyAndUsePotionEnabled then
                                 flyToSkyForBuy()
